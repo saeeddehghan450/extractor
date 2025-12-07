@@ -1,0 +1,22 @@
+{
+  "name": "ultimate-devtools-extractor",
+  "version": "1.0.0",
+  "description": "Ultimate DevTools Extractor - TypeScript + Playwright + CDP",
+  "main": "dist/main.js",
+  "scripts": {
+    "start": "ts-node src/main.ts",
+    "build": "tsc",
+    "clean": "rm -rf dist output",
+    "collectors": "ts-node src/bin/collector-cli.ts"
+  },
+  "author": "saeed dehghan",
+  "license": "MIT",
+  "dependencies": {
+    "playwright": "^1.56.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  }
+}

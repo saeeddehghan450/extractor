@@ -1,0 +1,59 @@
+{
+  "targetUrl": "https://www.i2ocr.com/pdf-ocr-persian",
+  "headless": false,
+  "slowMo": 80,
+  "collectors": {
+    "network": {
+      "enabled": true,
+      "description": "HTTP requests and responses"
+    },
+    "console": {
+      "enabled": true,
+      "description": "Console logs, errors, and dialogs"
+    },
+    "elements": {
+      "enabled": true,
+      "description": "DOM element information"
+    },
+    "scripts": {
+      "enabled": true,
+      "description": "JavaScript files and inline scripts"
+    },
+    "css": {
+      "enabled": true,
+      "description": "Stylesheets and computed styles"
+    },
+    "application": {
+      "enabled": true,
+      "description": "Cookies, local storage, session storage"
+    },
+    "security": {
+      "enabled": true,
+      "description": "SSL/TLS and security headers"
+    },
+    "performance": {
+      "enabled": true,
+      "description": "Performance traces"
+    },
+    "accessibility": {
+      "enabled": true,
+      "description": "Accessibility tree"
+    },
+    "media": {
+      "enabled": true,
+      "description": "Audio/video element statistics"
+    },
+    "webgl": {
+      "enabled": true,
+      "description": "Canvas and WebGL details"
+    },
+    "memory": {
+      "enabled": true,
+      "description": "Heap snapshots"
+    },
+    "serviceWorker": {
+      "enabled": true,
+      "description": "Service worker registration info"
+    }
+  }
+}

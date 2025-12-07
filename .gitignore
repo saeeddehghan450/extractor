@@ -1,0 +1,86 @@
+# -------------------------------------------------------
+# Node / TypeScript / Playwright Gitignore
+# For: Ultimate DevTools Extractor Project
+# Author: Saeed Dehghan
+# -------------------------------------------------------
+
+# === Node Modules ===
+node_modules/
+.npm/
+.pnpm-store/
+.yarn/
+.yarn-cache/
+.yarnrc.yml
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# === Build Output ===
+dist/
+build/
+out/
+temp/
+tmp/
+
+# === Logs ===
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# === OS Files ===
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# === TypeScript ===
+*.tsbuildinfo
+*.tscache
+tsconfig.tsbuildinfo
+
+# === Playwright Specific ===
+playwright-report/
+playwright/.cache/
+test-results/
+blob-report/
+trace.zip
+.traces/
+
+# === Environment Files ===
+.env
+.env.*
+.env.local
+.env.development.local
+.env.production.local
+.env.test.local
+
+# === IDE / Editor ===
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# === Coverage ===
+coverage/
+*.lcov
+
+# === Project Output ===
+output/
+output/**
+
+# === Temporary Debug Files ===
+scratch/
+debug/
+*.tmp
+*.temp
+
+# === Mac/Linux Trash ===
+.Trash-*
+*.bak
+*.old
+
+# === Windows specific ===
+$RECYCLE.BIN/
