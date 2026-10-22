@@ -36,6 +36,16 @@ accessibility    media            webgl            memory
 serviceWorker
 ```
 
+### Docker
+```bash
+docker compose up -d --build
+docker compose logs -f
+docker compose run --rm extractor node dist/main.js --url https://example.com --duration 30
+docker compose run --rm extractor node dist/bin/collector-cli.js list
+docker cp devtools-extractor:/data/output ./output
+docker compose down            # add -v to delete the data volume
+```
+
 ### Development
 ```bash
 npm run setup       # install Chromium for Playwright

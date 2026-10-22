@@ -100,6 +100,9 @@ export interface SessionSummary {
 
 const MAX_PENDING_CLICK_SNAPSHOTS = 2;
 
+const NAME_HELPER_SHIM =
+  "if (typeof globalThis.__name !== 'function') Object.defineProperty(globalThis, '__name', { value: function (f) { return f; }, configurable: true, writable: true });";
+
 const PAGE_COLLECTORS: Record<string, (ctx: CollectorContext, opts: SessionOptions) => Promise<unknown>> = {
   elements: ctx => collectElementInfo(ctx),
   scripts: ctx => collectScripts(ctx),
@@ -226,6 +229,9 @@ export class ExtractorSession extends EventEmitter {
       await this.context.exposeBinding('__extractorClick', (source, data: ClickedElementInfo) => {
         this.handleClick(source.page, data);
       });
+      // Dev runners built on esbuild (tsx) insert `__name(fn, "name")` calls into functions;
+      // those functions are serialized into the page by Playwright, so the helper must exist there.
+      await this.context.addInitScript({ content: NAME_HELPER_SHIM });
       await this.context.addInitScript(extractorPageScript);
 
       this.browser.on('disconnected', () => {

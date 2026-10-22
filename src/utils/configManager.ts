@@ -62,6 +62,11 @@ export function normalizeConfig(raw: Partial<Config>): Config {
   };
 }
 
+/** EXTRACTOR_HEADLESS=1 forces headless mode (e.g. in Docker, where there is no display). */
+export function isHeadlessForced(): boolean {
+  return /^(1|true|yes)$/i.test(process.env.EXTRACTOR_HEADLESS || '');
+}
+
 /**
  * Load configuration from config.json
  */

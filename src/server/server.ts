@@ -20,7 +20,7 @@ import {
   listSessions,
   resolveSessionFile
 } from '../core/sessionStore';
-import { getCollectorFlags, loadConfig, updateConfig } from '../utils/configManager';
+import { getCollectorFlags, isHeadlessForced, loadConfig, updateConfig } from '../utils/configManager';
 import { PRESETS, applyPreset, isPresetName } from '../utils/presets';
 import { error, info, onLog, success, warn } from '../utils/logger';
 
@@ -186,7 +186,8 @@ async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, ur
     return sendJSON(res, 200, {
       collectors: COLLECTORS,
       presets: Object.entries(PRESETS).map(([key, p]) => ({ key, name: p.name, description: p.description, collectors: p.collectors })),
-      outputDir: OUTPUT_DIR
+      outputDir: OUTPUT_DIR,
+      forceHeadless: isHeadlessForced()
     });
   }
   if (route === 'GET /config') return sendJSON(res, 200, loadConfig());
@@ -223,7 +224,7 @@ async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, ur
     try {
       session = new ExtractorSession({
         url: String(body.url || cfg.targetUrl),
-        headless: typeof body.headless === 'boolean' ? body.headless : cfg.headless,
+        headless: isHeadlessForced() || (typeof body.headless === 'boolean' ? body.headless : cfg.headless),
         slowMo: cfg.slowMo,
         executablePath: cfg.executablePath,
         viewport: cfg.viewport,

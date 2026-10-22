@@ -1,0 +1,18 @@
+services:
+  extractor:
+    build: .
+    image: devtools-extractor:latest
+    container_name: devtools-extractor
+    # dashboard only on this machine: it drives a browser and serves the output folder
+    ports:
+      - "127.0.0.1:4000:4000"
+    volumes:
+      - extractor-data:/data
+    # Chromium needs more shared memory than Docker's 64 MB default
+    shm_size: "1gb"
+    # reaps Chromium child processes and forwards signals
+    init: true
+    restart: unless-stopped
+
+volumes:
+  extractor-data:

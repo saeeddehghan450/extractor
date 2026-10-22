@@ -15,7 +15,7 @@
 
 import { ExtractorSession } from './core/session';
 import { OUTPUT_DIR } from './core/sessionStore';
-import { getCollectorFlags, loadConfig } from './utils/configManager';
+import { getCollectorFlags, isHeadlessForced, loadConfig } from './utils/configManager';
 import { error, info, success, warn } from './utils/logger';
 
 function parseArgs(argv: string[]) {
@@ -43,7 +43,7 @@ async function run() {
 
   const session = new ExtractorSession({
     url: args.url || process.env.TARGET_URL || config.targetUrl,
-    headless: args.headless ?? config.headless,
+    headless: isHeadlessForced() || (args.headless ?? config.headless),
     slowMo: config.slowMo,
     executablePath: config.executablePath,
     viewport: config.viewport,

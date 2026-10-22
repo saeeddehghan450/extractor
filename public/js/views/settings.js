@@ -19,7 +19,7 @@ export function mount(el, _params, { setHeader }) {
       </div>
 
       <label class="row" style="cursor:pointer">
-        <span class="switch"><input type="checkbox" id="headless" ${cfg.headless ? 'checked' : ''}><span></span></span>
+        <span class="switch"><input type="checkbox" id="headless" ${cfg.headless || state.meta?.forceHeadless ? 'checked' : ''} ${state.meta?.forceHeadless ? 'disabled' : ''}><span></span></span>
         <span><strong>${esc(t('settings.headless'))}</strong><br><span class="muted small">${esc(t('settings.headless.hint'))}</span></span>
       </label>
 
@@ -63,7 +63,7 @@ export function mount(el, _params, { setHeader }) {
     try {
       state.config = await api.saveConfig({
         targetUrl: $('#targetUrl', el).value,
-        headless: $('#headless', el).checked,
+        headless: state.meta?.forceHeadless ? undefined : $('#headless', el).checked,
         slowMo: Number($('#slowMo', el).value) || 0,
         performanceTraceMs: Number($('#trace', el).value) || 0,
         viewport: { width: Number($('#vpW', el).value), height: Number($('#vpH', el).value) },

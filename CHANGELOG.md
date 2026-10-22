@@ -1,5 +1,24 @@
 # 📝 CHANGELOG
 
+## 2.1.0 — Latest dependencies & Docker
+
+### Changed
+- Dependencies updated to the latest releases: Playwright 1.64.1, TypeScript 7.0.2,
+  @types/node 26.6.5.
+- `ts-node` (unmaintained, incompatible with TypeScript 7) replaced by `tsx` 4.23.15 for
+  `npm start`, `npm run extract`, `npm run collectors` and `npm test`.
+- tsconfig: `moduleResolution: node` was removed in TypeScript 7 → `NodeNext`.
+- `package-lock.json` is now committed (needed for reproducible `npm ci` / Docker builds).
+- Node.js 20+ required (Playwright requirement).
+
+### Added
+- `Dockerfile` (multi-stage, official Playwright image, non-root, healthcheck), `docker-compose.yml`
+  and `.dockerignore`.
+- `EXTRACTOR_HEADLESS=1` forces headless mode; the dashboard locks the headless switch.
+
+### Fixed
+- Page scripts failed under esbuild-based runners (tsx) because of injected `__name` helpers.
+
 ## 2.0.0 — Web dashboard & reliable collectors
 
 ### Added

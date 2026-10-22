@@ -86,7 +86,7 @@ function renderStart(el, finished) {
           <button class="btn primary lg" id="startBtn" type="submit">${icon('play')}<span>${esc(t('live.start'))}</span></button>
         </form>
         <div class="start-opts">
-          <label><span class="switch"><input type="checkbox" id="headless" ${cfg.headless ? 'checked' : ''}><span></span></span>${esc(t('live.headless'))}</label>
+          <label><span class="switch"><input type="checkbox" id="headless" ${cfg.headless || meta.forceHeadless ? 'checked' : ''} ${meta.forceHeadless ? 'disabled' : ''}><span></span></span>${esc(t('live.headless'))}</label>
         </div>
       </section>
 

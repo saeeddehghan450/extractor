@@ -1,31 +1,31 @@
 {
   "name": "ultimate-devtools-extractor",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Ultimate DevTools Extractor - TypeScript + Playwright + CDP, with a web dashboard",
   "main": "dist/server/server.js",
   "scripts": {
-    "start": "ts-node --transpile-only src/server/server.ts",
-    "dashboard": "ts-node --transpile-only src/server/server.ts",
-    "extract": "ts-node --transpile-only src/main.ts",
-    "collectors": "ts-node --transpile-only src/bin/collector-cli.ts",
+    "start": "tsx src/server/server.ts",
+    "dashboard": "tsx src/server/server.ts",
+    "extract": "tsx src/main.ts",
+    "collectors": "tsx src/bin/collector-cli.ts",
     "build": "tsc",
     "start:prod": "node dist/server/server.js",
     "typecheck": "tsc --noEmit",
-    "test": "node -r ts-node/register/transpile-only --test test/*.test.ts",
+    "test": "node --import tsx --test test/*.test.ts",
     "setup": "playwright install chromium",
     "clean": "rm -rf dist output"
   },
   "author": "saeed dehghan",
   "license": "MIT",
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "dependencies": {
-    "playwright": "^1.56.1"
+    "playwright": "^1.64.1"
   },
   "devDependencies": {
-    "@types/node": "^24.10.1",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.9.3"
+    "@types/node": "^26.6.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
   }
 }
