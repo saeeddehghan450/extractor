@@ -98,8 +98,9 @@ curl "http://localhost:4000/v1/tools?format=anthropic"    # tools, Anthropic for
 ```bash
 npm run setup       # install Chromium for Playwright
 npm run typecheck
-npm run build:web   # compile the dashboard (web/src -> public/js)
-npm run dev:web     # recompile the dashboard on every change
+npm run build:web   # build the Next.js dashboard (static export -> web/out)
+npm run dev         # NestJS server with reload (tsx watch)
+npm run dev:web     # Next.js dev server on :3000 with the API proxied to :4000
 npm test
 npm run clean       # remove dist/ and output/
 ```

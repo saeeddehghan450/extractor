@@ -4,7 +4,8 @@ Extract everything Chrome DevTools can see about a web page — network traffic,
 scripts, styles, storage, security, performance, accessibility, media, WebGL, memory and
 service workers — and browse the results in a web dashboard.
 
-Built with TypeScript, Playwright and the Chrome DevTools Protocol (CDP).
+Built with TypeScript, Playwright and the Chrome DevTools Protocol (CDP). The dashboard is a
+**Next.js 16 / React 19** app served by a **NestJS 12** server.
 
 > **راهنمای سریع (فارسی)**
 >
@@ -405,9 +406,21 @@ that data:
 | **Live session** | Start a session, live browser preview with remote control, live network table and request inspector, console, server log, clicks/snapshots timeline, live counters |
 | **Collectors** | Enable/disable each of the 13 collectors or apply a preset |
 | **Saved results** | All past sessions: overview with insights (security headers, Web Vitals, a11y issues, storage…), snapshot gallery with screenshots, network & console explorer, JSON tree viewer for every module, file browser and downloads |
+| **Interactive scraper** | Pick data on the live page, lists and pagination, CSV / JSON / Markdown, recipes |
+| **AI assistant** | Chat with any OpenAI-compatible or Anthropic model that uses the tools; MCP connection snippets |
+| **Knowledge graph** | Neo4j status, read-only Cypher console with table and graph views, ready-made insights |
+| **Data storage** | PostgreSQL + SeaweedFS archive: archived sessions, restore, read-only SQL console |
 | **Settings** | Default URL, headless, viewport, slow-mo, trace duration, custom Chromium path |
 
 The UI is available in Persian (RTL) and English, with dark and light themes.
+
+Architecture: the dashboard (`web/`, Next.js App Router, client components) is built as a static
+export (`web/out`) and served by the NestJS server on the same origin as the API — one process, one
+port, no CORS. The server (`src/server/`) has one module per area: config / sessions, live events
+(SSE `/api/events`), the live view gateway (WebSocket `/ws/live`), scraper, knowledge graph, storage,
+MCP + tool gateway and the agent. Host / Origin / JSON checks run first for every request, an
+exception filter turns every error into `{"error": "..."}`, and `EXTRACTOR_API_TOKEN` is enforced by a
+guard on `/mcp` and `/v1`.
 
 ## Collectors
 
@@ -511,6 +524,7 @@ Environment variables:
 | `DEBUG=1` | Print debug logs |
 | `EXTRACTOR_API_TOKEN` | Bearer token required on `/mcp` and `/v1/*` |
 | `EXTRACTOR_ALLOWED_HOSTS` | Extra host names the server answers for (DNS-rebinding protection) |
+| `EXTRACTOR_ALLOWED_ORIGINS` | Extra browser origins allowed to call the API (`npm run dev` sets the Next.js dev server's) |
 | `EXTRACTOR_AI_*`, `OPENAI_*`, `ANTHROPIC_*` | Agent settings, see *Built-in agent* |
 | `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`, `NEO4J_DATABASE` | Knowledge graph connection (overrides the dashboard settings) |
 | `NEO4J_AUTO_SYNC=0` | Do not sync sessions automatically |
@@ -523,20 +537,27 @@ so do not expose it on a public interface.
 
 ## Development
 
-Requires Node.js 20+. The whole project is TypeScript: the server runs directly with `tsx` in
-development, and the dashboard (`web/src`) is compiled by `tsc` to `public/js` — `npm start` does
-that automatically. Use `npm run dev:web` to recompile the dashboard on every change.
+Requires Node.js 20.19+ (NestJS 12 is ESM-only; Node loads it through `require(esm)`). The whole
+project is TypeScript:
+
+- **server** (`src/`, NestJS 12 on Express): runs directly with `tsx` in development, compiled by
+  `tsc` to `dist/` for production (decorator metadata is emitted by `tsc`; services are injected with
+  explicit `@Inject()` so `tsx`/esbuild works too).
+- **dashboard** (`web/`, Next.js 16 + React 19): `next build web` writes a static export to
+  `web/out`, which the server serves. `npm start` builds it automatically.
 
 ```bash
+npm start            # build the dashboard, start the server on http://localhost:4000
+npm run dev          # server with reload on change (tsx watch)
+npm run dev:web      # Next.js dev server on http://localhost:3000, API proxied to :4000 (run next to npm run dev)
 npm run typecheck    # TypeScript check (server + dashboard)
-npm run dev:web      # recompile the dashboard on change (run next to npm start)
 npm test             # end-to-end tests (real headless Chromium against a local fixture site)
 # Neo4j tests run when a server is given:
 NEO4J_TEST_URI=bolt://127.0.0.1:7687 NEO4J_TEST_PASSWORD=… npm test
 # storage tests run when PostgreSQL and SeaweedFS are given:
 STORAGE_TEST_DATABASE_URL=postgres://… STORAGE_TEST_S3_ENDPOINT=http://127.0.0.1:8333 \
   STORAGE_TEST_S3_KEY=… STORAGE_TEST_S3_SECRET=… npm test
-npm run build        # server -> dist/, dashboard -> public/js ; then: npm run start:prod
+npm run build        # server -> dist/, dashboard -> web/out ; then: npm run start:prod
 ```
 
 Project layout:
@@ -545,6 +566,7 @@ Project layout:
 src/
 ├── core/
 │   ├── session.ts          # session lifecycle, snapshots, output, remote control
+│   ├── controller.ts       # the shared running session (dashboard, MCP, gateway, agent)
 │   ├── sessionStore.ts     # reading saved sessions
 │   ├── emulation.ts        # devices, throttling, UA / headers, URL blocking
 │   ├── har.ts              # HAR 1.2 export
@@ -552,13 +574,17 @@ src/
 │   ├── search.ts           # full-text search inside a session
 │   └── pageScript.ts       # injected script: click tracking, canvas context tracking
 ├── collectors/             # one module per collector + registry.ts
-├── server/
-│   ├── server.ts           # dashboard HTTP API + live events (SSE)
-│   ├── aiRoutes.ts         # /mcp, /v1/tools gateway, /api/agent
-│   ├── liveSocket.ts       # /ws/live: screencast frames + input over WebSocket
-│   ├── scraperRoutes.ts    # /api/scraper/*
-│   ├── graphRoutes.ts      # /api/graph/*
-│   └── storageRoutes.ts    # /api/storage/*
+├── server/                 # NestJS server
+│   ├── main.ts             # entry point (npm start / node dist/server/main.js)
+│   ├── app.ts, app.module.ts
+│   ├── common/             # security middleware + API token guard, error filter, file sending
+│   ├── dashboard/          # /api/meta, /api/config, /api/session/*, /api/sessions/*
+│   ├── events/             # /api/events (Server-Sent Events)
+│   ├── live/               # /ws/live gateway: screencast frames + input + element picking
+│   ├── scraper/            # /api/scraper/*
+│   ├── graph/              # /api/graph/*
+│   ├── storage/            # /api/storage/*
+│   └── ai/                 # /mcp, /v1/tools gateway, /api/agent/*
 ├── graph/                  # Neo4j: connection + read-only queries, session sync, insights
 ├── storage/                # PostgreSQL + SeaweedFS (S3): settings, schema, read-only SQL, archive / restore
 ├── mcp/                    # MCP server (stdio + Streamable HTTP)
@@ -571,12 +597,14 @@ src/
 ├── utils/                  # config, presets, CDP helpers, files, logger
 ├── bin/collector-cli.ts    # collectors CLI
 └── main.ts                 # command-line extraction
-web/
-├── src/                    # dashboard source (TypeScript, no framework)
-│   ├── app.ts, store.ts, api.ts, types.ts, i18n.ts, ...
-│   └── views/              # live, scraper, collectors, sessions, graph, storage, assistant, settings
-└── tsconfig.json           # browser build -> public/js
-public/                     # index.html, CSS and the compiled dashboard (public/js is generated)
+web/                        # Next.js dashboard
+├── app/                    # App Router pages: /, /scraper, /collectors, /sessions, /graph, /storage,
+│                           # /assistant, /settings (+ layout, globals.css)
+├── views/                  # one component per page
+├── components/             # shell, icons, JSON tree, live canvas, query results, details
+├── lib/                    # API client, live store (SSE), i18n (fa/en), live view (WebSocket), force graph
+├── next.config.ts          # static export; dev server proxies the API
+└── public/                 # favicon
 test/                       # end-to-end tests and fixture site
 Dockerfile, docker-compose.yml
 ```

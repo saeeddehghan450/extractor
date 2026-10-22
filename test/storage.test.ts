@@ -44,7 +44,7 @@ let m: {
   pg: typeof import('../src/storage/postgres');
   s3: typeof import('../src/storage/objectStore');
   callTool: typeof import('../src/ai/tools').callTool;
-  createServer: typeof import('../src/server/server').createServer;
+  createServer: typeof import('../src/server/app').createServer;
 };
 let site: { url: string; close: () => Promise<void> };
 let sessionId = '';
@@ -58,7 +58,7 @@ before(async () => {
     pg: await import('../src/storage/postgres'),
     s3: await import('../src/storage/objectStore'),
     callTool: (await import('../src/ai/tools')).callTool,
-    createServer: (await import('../src/server/server')).createServer
+    createServer: (await import('../src/server/app')).createServer
   };
   m.archive.installAutoArchive();
   site = await startFixtureServer();
@@ -133,7 +133,7 @@ test('remove the local copy, serve files from SeaweedFS, restore', { skip }, asy
   assert.equal(listed.inObjectStore, true);
 
   // the dashboard serves the file from SeaweedFS while there is no local copy
-  const server = m.createServer();
+  const server = await m.createServer();
   await new Promise<void>(res => server.listen(0, '127.0.0.1', res));
   try {
     const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -193,7 +193,7 @@ test('AI tools: status, SQL, archive, list and restore', { skip }, async () => {
 });
 
 test('dashboard API: status without secrets, SQL, archive list', { skip }, async () => {
-  const server = m.createServer();
+  const server = await m.createServer();
   await new Promise<void>(res => server.listen(0, '127.0.0.1', res));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const call = async (method: string, p: string, body?: unknown) => {

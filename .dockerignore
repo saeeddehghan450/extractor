@@ -13,4 +13,5 @@ test
 Dockerfile
 docker-compose.yml
 .dockerignore
-public/js
+web/.next
+web/out

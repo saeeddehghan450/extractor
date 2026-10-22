@@ -1,5 +1,24 @@
 # 📝 CHANGELOG
 
+## 3.0.0 — Next.js dashboard on a NestJS server
+
+### Changed
+- Backend rewritten on **NestJS 12** (Express platform): one module per area — config and sessions,
+  live events (SSE), the `/ws/live` WebSocket gateway (Nest `WsAdapter`, one message per client at a
+  time), scraper, knowledge graph, storage, MCP + tool gateway and the agent. Security runs as the first
+  middleware (Host / Origin / JSON checks, 1 MB JSON bodies), `EXTRACTOR_API_TOKEN` is a guard on `/mcp`
+  and `/v1`, and an exception filter returns every error as `{"error": "..."}`. Every endpoint keeps its
+  path, status codes and JSON shape.
+- Dashboard rewritten in **Next.js 16 + React 19** (App Router, client components, TypeScript). It is
+  built as a static export (`web/out`) and served by the NestJS server on the same origin, so there is
+  still one process and one port. Same pages, design, Persian / English and dark / light themes.
+- `npm run dev` (server with reload) and `npm run dev:web` (Next.js dev server proxying the API);
+  `node dist/server/main.js` replaces `dist/server/server.js`. Node.js 20.19+ is required.
+- Saved session pages are now `/sessions/?id=<id>` instead of `#/sessions/<id>`.
+
+### Removed
+- The framework-less dashboard (`web/src`, `public/`) and the hand-written HTTP router.
+
 ## 2.7.0 — Long-term storage: PostgreSQL + SeaweedFS
 
 ### Added

@@ -23,7 +23,7 @@ process.env.EXTRACTOR_HEADLESS = '1';
 // loaded after the environment is set (the store reads EXTRACTOR_OUTPUT at load time)
 let mod: {
   createMcpServer: typeof import('../src/mcp/server').createMcpServer;
-  createServer: typeof import('../src/server/server').createServer;
+  createServer: typeof import('../src/server/app').createServer;
   controller: typeof import('../src/core/controller').controller;
   ExtractorAgent: typeof import('../src/ai/agent').ExtractorAgent;
   TOOLS: typeof import('../src/ai/tools').TOOLS;
@@ -33,7 +33,7 @@ let site: { url: string; close: () => Promise<void> };
 before(async () => {
   mod = {
     createMcpServer: (await import('../src/mcp/server')).createMcpServer,
-    createServer: (await import('../src/server/server')).createServer,
+    createServer: (await import('../src/server/app')).createServer,
     controller: (await import('../src/core/controller')).controller,
     ExtractorAgent: (await import('../src/ai/agent')).ExtractorAgent,
     TOOLS: (await import('../src/ai/tools')).TOOLS
@@ -132,7 +132,7 @@ test('MCP: full extraction through the tools (in-memory transport)', { timeout: 
 });
 
 test('MCP over Streamable HTTP, tool gateway, host check and token', { timeout: 60000 }, async () => {
-  const server = mod.createServer();
+  const server = await mod.createServer();
   const base = await listen(server);
   try {
     // MCP client over HTTP
@@ -347,7 +347,7 @@ test('agent over the dashboard API streams NDJSON events', { timeout: 60000 }, a
     choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: 'Hello from the model.' } }]
   }));
   const llmBase = await listen(llm);
-  const server = mod.createServer();
+  const server = await mod.createServer();
   const base = await listen(server);
   try {
     const res = await fetch(`${base}/api/agent/chat`, {

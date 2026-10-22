@@ -19,7 +19,7 @@ process.env.EXTRACTOR_HEADLESS = '1';
 let m: {
   controller: typeof import('../src/core/controller').controller;
   scraper: typeof import('../src/scraper/scraper');
-  createServer: typeof import('../src/server/server').createServer;
+  createServer: typeof import('../src/server/app').createServer;
   callTool: typeof import('../src/ai/tools').callTool;
 };
 let site: { url: string; close: () => Promise<void> };
@@ -28,7 +28,7 @@ before(async () => {
   m = {
     controller: (await import('../src/core/controller')).controller,
     scraper: await import('../src/scraper/scraper'),
-    createServer: (await import('../src/server/server')).createServer,
+    createServer: (await import('../src/server/app')).createServer,
     callTool: (await import('../src/ai/tools')).callTool
   };
   site = await startFixtureServer();
@@ -160,7 +160,7 @@ test('recipe extraction follows pagination and saves CSV / JSON', async () => {
 test('WebSocket live view: frames, input, picking, origin check', { timeout: 60000 }, async () => {
   const session = m.controller.active!;
   await session.navigate(`${site.url}products`);
-  const server = m.createServer();
+  const server = await m.createServer();
   await new Promise<void>(r => server.listen(0, '127.0.0.1', () => r()));
   const port = (server.address() as AddressInfo).port;
   const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/live`);
@@ -229,7 +229,7 @@ test('WebSocket live view: frames, input, picking, origin check', { timeout: 600
 test('scraper HTTP API: count, preview, run, recipes', async () => {
   const session = m.controller.active!;
   await session.navigate(`${site.url}products`);
-  const server = m.createServer();
+  const server = await m.createServer();
   await new Promise<void>(r => server.listen(0, '127.0.0.1', () => r()));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const post = (p: string, body: unknown) =>

@@ -194,7 +194,7 @@ export function setCollectorEnabled(collectorName: string, enabled: boolean): vo
  * Merge a partial update into the config and persist it.
  */
 export function updateConfig(patch: Partial<Omit<Config, 'emulation' | 'neo4j' | 'storage'>> & {
-  neo4j?: Neo4jSettings & { password?: string | null };
+  neo4j?: Omit<Neo4jSettings, 'password'> & { password?: string | null };
   storage?: {
     postgres?: { enabled?: boolean; url?: string | null };
     s3?: { enabled?: boolean; endpoint?: string; accessKeyId?: string; secretAccessKey?: string | null; bucket?: string; region?: string };

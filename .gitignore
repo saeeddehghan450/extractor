@@ -84,5 +84,7 @@ debug/
 # === Windows specific ===
 $RECYCLE.BIN/
 
-# === Compiled dashboard (built from web/src by `npm run build:web`) ===
-public/js/
+# === Next.js dashboard (web/) ===
+web/.next/
+web/out/
+web/next-env.d.ts

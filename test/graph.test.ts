@@ -34,7 +34,7 @@ let m: {
   sync: typeof import('../src/graph/sync');
   insights: typeof import('../src/graph/insights');
   callTool: typeof import('../src/ai/tools').callTool;
-  createServer: typeof import('../src/server/server').createServer;
+  createServer: typeof import('../src/server/app').createServer;
 };
 let site: { url: string; close: () => Promise<void> };
 let sessionId = '';
@@ -49,7 +49,7 @@ before(async () => {
     sync: await import('../src/graph/sync'),
     insights: await import('../src/graph/insights'),
     callTool: (await import('../src/ai/tools')).callTool,
-    createServer: (await import('../src/server/server')).createServer
+    createServer: (await import('../src/server/app')).createServer
   };
   m.sync.installAutoSync();
   site = await startFixtureServer();
@@ -166,7 +166,7 @@ test('AI tools: schema, query, insight and sync', { skip }, async () => {
 });
 
 test('dashboard API: status, query, insights, sync and no password leak', { skip }, async () => {
-  const server = m.createServer();
+  const server = await m.createServer();
   await new Promise<void>(r => server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const call = async (method: string, p: string, body?: unknown) => {

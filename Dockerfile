@@ -5,7 +5,7 @@
 ARG PLAYWRIGHT_VERSION=1.64.1
 
 # ---------------------------------------------------------------------------
-# build: compile the server and the dashboard (TypeScript), then drop dev dependencies
+# build: compile the server and the dashboard, then drop dev dependencies
 # ---------------------------------------------------------------------------
 FROM mcr.microsoft.com/playwright:v${PLAYWRIGHT_VERSION}-noble AS build
 WORKDIR /app
@@ -16,7 +16,8 @@ RUN npm ci --no-audit --no-fund
 COPY tsconfig.json ./
 COPY src ./src
 COPY web ./web
-COPY public ./public
+# server: NestJS (tsc -> dist/) · dashboard: Next.js static export (web/out)
+ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build && npm prune --omit=dev --no-audit --no-fund
 
 # ---------------------------------------------------------------------------
@@ -35,7 +36,7 @@ WORKDIR /app
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY package.json ./
-COPY --from=build /app/public ./public
+COPY --from=build /app/web/out ./web/out
 
 # /data holds config.json and every session's output (mount a volume there)
 RUN mkdir -p /data/output && chown -R pwuser:pwuser /data
@@ -47,4 +48,4 @@ EXPOSE 4000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:' + (process.env.PORT || 4000) + '/api/meta').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
 
-CMD ["node", "dist/server/server.js"]
+CMD ["node", "dist/server/main.js"]
