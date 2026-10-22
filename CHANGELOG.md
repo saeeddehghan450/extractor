@@ -1,5 +1,21 @@
 # 📝 CHANGELOG
 
+## 2.5.0 — Interactive scraper and WebSocket live view
+
+### Added
+- Interactive scraper page: open a site, pick elements on the live view (hover highlight, click to add a
+  column), automatic detection of repeating lists with item-relative field selectors, editable columns
+  (text, link, image/source, attribute, HTML, form value), pagination through a picked "next" element,
+  preview, extraction of all pages to CSV (UTF-8 BOM) + JSON, saved recipes.
+- WebSocket live view `/ws/live`: CDP screencast frames (sent only on repaint, slow clients skip frames),
+  mouse / wheel / keyboard input, element picking and highlight boxes; Host and Origin checks on upgrade.
+- MCP tools `extractor_scrape`, `extractor_list_recipes`, `extractor_run_recipe` (23 tools in total).
+- Scraper HTTP API (`/api/scraper/*`) and tests for picking, lists, pagination, CSV, recipes, the API and
+  the WebSocket protocol.
+
+### Changed
+- The live session page shows the browser through the WebSocket view instead of polling screenshots.
+
 ## 2.4.0 — MCP server and AI models
 
 ### Added

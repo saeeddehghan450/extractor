@@ -1,6 +1,6 @@
 {
   "name": "ultimate-devtools-extractor",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "description": "Ultimate DevTools Extractor - TypeScript + Playwright + CDP, with a web dashboard, an MCP server and an LLM agent",
   "main": "dist/server/server.js",
   "scripts": {
@@ -30,10 +30,12 @@
     "@modelcontextprotocol/sdk": "^1.32.1",
     "openai": "^7.42.0",
     "playwright": "^1.64.1",
+    "ws": "^8.22.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
+    "@types/ws": "^8.18.2",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"
   },

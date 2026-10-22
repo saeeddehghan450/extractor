@@ -233,3 +233,21 @@ export interface ViewContext {
 }
 export type Unmount = () => void;
 export type MountFn = (el: HTMLElement, params: string[], ctx: ViewContext) => Unmount | void;
+
+export type ExtractKind = 'text' | 'href' | 'src' | 'html' | 'attr' | 'value';
+
+export interface ScrapeField {
+  name: string;
+  selector: string;
+  extract: ExtractKind;
+  attribute?: string;
+}
+
+export interface ScrapeRecipe {
+  name?: string;
+  url?: string;
+  itemSelector?: string;
+  fields: ScrapeField[];
+  nextSelector?: string;
+  maxPages?: number;
+}

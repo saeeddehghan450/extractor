@@ -3,11 +3,11 @@ import { icon, COLLECTOR_ICONS } from '../icons.js';
 import { t, fmtNumber, fmtTime } from '../i18n.js';
 import { state, on, onAny, emit } from '../store.js';
 import type { EventType } from '../store.js';
-import type { InputAction } from '../api.js';
 import type { EmulationOptions, NetworkRow, SessionSummary, ViewContext } from '../types.js';
 
 import { $, $$, emulationPills, esc, errMsg, html, inputValue, toast, openDrawer, fmtBytes, fmtDuration, statusClass, headersTable, debounce, copyText } from '../util.js';
 import { renderJson } from '../jsonView.js';
+import { LiveView } from '../liveView.js';
 
 const NET_TYPES: [string, string][] = [
   ['all', 'net.all'],
@@ -19,9 +19,6 @@ const NET_TYPES: [string, string][] = [
   ['font', 'Font'],
   ['other', 'Other']
 ];
-
-const KEY_MAP = new Set(['Enter', 'Backspace', 'Tab', 'Escape', 'Delete', 'Home', 'End', 'PageUp', 'PageDown',
-  'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
 
 const isActive = (s: SessionSummary | null): boolean => !!s && (s.status === 'running' || s.status === 'starting' || s.status === 'stopping');
 
@@ -220,10 +217,7 @@ function renderRunning(el: HTMLElement): () => void {
             <a class="btn sm ghost" href="${api.liveHarUrl()}" download title="${esc(t('live.har'))}">${icon('download')}<span>HAR</span></a>
             <button class="btn sm danger" id="stopBtn">${icon('stop')}<span>${esc(t('live.stop'))}</span></button>
           </div>
-          <div class="viewport" id="viewport" tabindex="0" style="--vp-ratio:${vp.width} / ${vp.height};--vp-w:${vp.width};--vp-h:${vp.height}">
-            <img id="shot" alt="">
-            <div class="overlay" id="shotOverlay"><div><span class="spinner"></span><div class="small" style="margin-top:8px">${esc(t('live.preview.loading'))}</div></div></div>
-          </div>
+          <div id="viewport" style="--lv-ratio:${vp.width} / ${vp.height};--lv-w:${vp.width};--lv-h:${vp.height}"></div>
           <div class="browser-foot">${icon('keyboard')}<span>${esc(s.headless ? t('live.preview.hint') : t('live.preview.headed') + ' ' + t('live.preview.hint'))}</span>
             ${emulationPills(s)}</div>
         </div>
@@ -480,86 +474,20 @@ function renderRunning(el: HTMLElement): () => void {
     }
   }
 
-  // --- browser controls ---
-  const shot = $<HTMLImageElement>('#shot', el);
-  const overlay = $('#shotOverlay', el);
-  const viewport = $('#viewport', el);
-  let alive = true;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let lastUrl: string | null = null;
-
-  const refreshShot = async () => {
-    clearTimeout(timer);
-    if (!alive) return;
-    if (document.hidden || state.session?.status !== 'running') {
-      timer = setTimeout(refreshShot, 1000);
-      return;
-    }
-    try {
-      const res = await fetch('/api/session/screenshot', { cache: 'no-store' });
-      if (!res.ok) throw new Error(String(res.status));
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      await new Promise(resolve => { shot.onload = resolve; shot.onerror = resolve; shot.src = url; });
-      if (lastUrl) URL.revokeObjectURL(lastUrl);
-      lastUrl = url;
-      overlay.hidden = true;
-      timer = setTimeout(refreshShot, 800);
-    } catch {
-      timer = setTimeout(refreshShot, 1500);
-    }
-  };
-  const soon = () => { clearTimeout(timer); timer = setTimeout(refreshShot, 250); };
-
-  const send = async (body: InputAction) => {
-    try {
-      const r = await api.input(body);
-      if (r.url) $<HTMLInputElement>('#navUrl', el).value = r.url;
-    } catch (err) {
-      toast(errMsg(err), 'err');
-    }
-    soon();
-  };
-
-  const ripple = (x: number, y: number) => {
-    const d = document.createElement('div');
-    d.className = 'ripple';
-    d.style.left = `${x}px`;
-    d.style.top = `${y}px`;
-    viewport.appendChild(d);
-    setTimeout(() => d.remove(), 700);
-  };
-
-  shot.addEventListener('click', e => {
-    const rect = shot.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width) * vp.width;
-    const y = ((e.clientY - rect.top) / rect.height) * vp.height;
-    ripple(e.clientX - viewport.getBoundingClientRect().left, e.clientY - viewport.getBoundingClientRect().top);
-    viewport.focus();
-    send({ action: 'click', x: Math.round(x), y: Math.round(y) });
+  // --- browser controls: live view over WebSocket ---
+  const live = new LiveView($('#viewport', el), {
+    onNavigated: url => {
+      const input = $<HTMLInputElement>('#navUrl', el);
+      if (input && document.activeElement !== input) input.value = url;
+    },
+    onError: message => toast(message, 'err')
   });
-
-  let wheel = 0;
-  const flushWheel = debounce(() => { const d = wheel; wheel = 0; if (d) send({ action: 'scroll', deltaY: d }); }, 120);
-  viewport.addEventListener('wheel', e => { e.preventDefault(); wheel += e.deltaY; flushWheel(); }, { passive: false });
-
-  let typed = '';
-  const flushTyped = debounce(() => { const s = typed; typed = ''; if (s) send({ action: 'type', text: s }); }, 150);
-  viewport.addEventListener('keydown', e => {
-    if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      e.preventDefault();
-      typed += e.key;
-      flushTyped();
-    } else if (KEY_MAP.has(e.key) || ((e.ctrlKey || e.metaKey) && e.key.length === 1)) {
-      e.preventDefault();
-      const s = typed; typed = '';
-      const key = (e.ctrlKey || e.metaKey) && e.key.length === 1 ? `Control+${e.key}` : e.key;
-      (s ? send({ action: 'type', text: s }) : Promise.resolve()).then(() => send({ action: 'press', key }));
-    }
-  });
-
-  $$('[data-nav]', el).forEach(b => { b.onclick = () => send({ action: b.dataset.nav as 'back' | 'forward' | 'reload' }); });
-  $('#navForm', el).onsubmit = e => { e.preventDefault(); send({ action: 'navigate', url: $<HTMLInputElement>('#navUrl', el).value }); };
+  $$('[data-nav]', el).forEach(b => { b.onclick = () => live.history(b.dataset.nav as 'back' | 'forward' | 'reload'); });
+  $('#navForm', el).onsubmit = e => {
+    e.preventDefault();
+    live.navigate($<HTMLInputElement>('#navUrl', el).value);
+    live.el.focus();
+  };
 
   $('#snapBtn', el).onclick = async () => {
     const b = $<HTMLButtonElement>('#snapBtn', el);
@@ -581,12 +509,7 @@ function renderRunning(el: HTMLElement): () => void {
     if (type === 'request' || type === 'response') dirty.net = true;
     else if (type === 'console') dirty.con = true;
     else if (type === 'log') dirty.logs = true;
-    else if (type === 'snapshot' || type === 'snapshot-start') { dirty.tl = true; if (type === 'snapshot') soon(); }
-    else if (type === 'navigated') {
-      const input = $<HTMLInputElement>('#navUrl', el);
-      if (input && document.activeElement !== input) input.value = state.session?.currentUrl || input.value;
-      soon();
-    } else if (type === 'click') soon();
+    else if (type === 'snapshot' || type === 'snapshot-start') dirty.tl = true;
   });
 
   const tick = setInterval(() => {
@@ -605,13 +528,10 @@ function renderRunning(el: HTMLElement): () => void {
   renderStats();
   renderTimeline();
   setTab('network');
-  refreshShot();
 
   return () => {
-    alive = false;
-    clearTimeout(timer);
+    live.destroy();
     clearInterval(tick);
     unsub();
-    if (lastUrl) URL.revokeObjectURL(lastUrl);
   };
 }

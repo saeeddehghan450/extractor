@@ -23,6 +23,7 @@ import { ExtractorSession, packageVersion } from '../core/session';
 import { listSessions, sessionDir } from '../core/sessionStore';
 import { readJSON, writeJSON } from '../utils/fileUtils';
 import { PRESETS, isPresetName } from '../utils/presets';
+import { Recipe, getRecipe, listRecipes, normalizeRecipe, runRecipe, saveScrape } from '../scraper/scraper';
 
 export interface ToolImage {
   /** base64, without the data: prefix */
@@ -633,6 +634,82 @@ export const TOOLS: ExtractorTool[] = [
     }
   }),
 
+  // --- scraping --------------------------------------------------------------------
+  defineTool({
+    name: 'extractor_scrape',
+    title: 'Scrape data',
+    description:
+      'Extract structured data from the current page of the running session. For lists (products, rows, cards) give ' +
+      'itemSelector (CSS selector matching every item) and field selectors relative to one item ("" = the item itself); ' +
+      'otherwise give page-wide field selectors. Optionally follow a "next page" element. Results are saved as JSON + CSV. ' +
+      'Find selectors with extractor_page_snapshot or extractor_evaluate.',
+    input: z.object({
+      itemSelector: z.string().optional(),
+      fields: z.array(z.object({
+        name: z.string(),
+        selector: z.string().describe('CSS selector (relative to the item when itemSelector is set)'),
+        extract: z.enum(['text', 'href', 'src', 'html', 'attr', 'value']).optional().describe('Default text'),
+        attribute: z.string().optional().describe('Attribute name for extract "attr"')
+      })).min(1),
+      nextSelector: z.string().optional().describe('Element to click for the next page'),
+      maxPages: z.number().int().min(1).max(100).optional(),
+      name: z.string().optional().describe('Name for the saved files'),
+      maxRows: z.number().int().min(1).max(5000).optional().describe('Rows to return in the answer (default 100; all rows are saved)')
+    }),
+    readOnly: false,
+    async run(a) {
+      const { session, page } = activePage();
+      const recipe = normalizeRecipe({ ...a, fields: a.fields.map(f => ({ ...f, extract: f.extract || 'text' })) });
+      const result = await runRecipe(page, recipe);
+      const files = saveScrape(session.dir, recipe, result);
+      const max = a.maxRows ?? 100;
+      return out({ rows: result.rows.length, pages: result.pages, stoppedBecause: result.stoppedBecause, files, data: result.rows.slice(0, max) }, 60000);
+    }
+  }),
+
+  defineTool({
+    name: 'extractor_list_recipes',
+    title: 'List scraping recipes',
+    description: 'Scraping recipes saved from the dashboard\'s interactive scraper (name, page, selectors).',
+    input: z.object({}),
+    readOnly: true,
+    async run() {
+      return out(listRecipes().map(r => ({ name: r.name, url: r.url, itemSelector: r.itemSelector, fields: r.fields, nextSelector: r.nextSelector, maxPages: r.maxPages, updatedAt: r.updatedAt })));
+    }
+  }),
+
+  defineTool({
+    name: 'extractor_run_recipe',
+    title: 'Run scraping recipe',
+    description:
+      'Run a saved scraping recipe. Opens "url" (or the recipe\'s own page) - starting a session when none is running - ' +
+      'then extracts every page and saves JSON + CSV.',
+    input: z.object({
+      name: z.string(),
+      url: z.string().optional().describe('Page to scrape (default: the page the recipe was made on)'),
+      maxPages: z.number().int().min(1).max(100).optional(),
+      maxRows: z.number().int().min(1).max(5000).optional()
+    }),
+    readOnly: false,
+    async run(a) {
+      const saved = getRecipe(a.name);
+      if (!saved) throw new ControllerError(404, `Recipe "${a.name}" not found - see extractor_list_recipes`);
+      const recipe: Recipe = { ...normalizeRecipe(saved), ...(a.maxPages ? { maxPages: a.maxPages } : {}) };
+      const target = a.url || recipe.url;
+      let session = controller.active;
+      if (!session) {
+        if (!target) throw new ControllerError(400, 'No session is running and the recipe has no url - pass "url"');
+        session = await controller.start({ url: target, headless: true });
+      } else if (a.url) {
+        await session.navigate(a.url);
+      }
+      const page = session.activePage;
+      if (!page) throw new ControllerError(409, 'The session has no open page');
+      const result = await runRecipe(page, recipe);
+      const files = saveScrape(session.dir, recipe, result);
+      return out({ recipe: recipe.name, url: result.url, rows: result.rows.length, pages: result.pages, files, data: result.rows.slice(0, a.maxRows ?? 100) }, 60000);
+    }
+  }),
   defineTool({
     name: 'extractor_export',
     title: 'Export',

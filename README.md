@@ -16,6 +16,9 @@ Built with TypeScript, Playwright and the Chrome DevTools Protocol (CDP).
 >
 > یا با داکر: `docker compose up -d --build` و سپس باز کردن `http://localhost:4000`
 >
+> برای استخراج داده بدون کدنویسی: در صفحه «اسکرپر تعاملی» سایت را باز کنید، روی تصویر زنده (WebSocket) بخش‌های
+> دلخواه را انتخاب کنید (لیست‌های تکراری خودکار تشخیص داده می‌شوند) و خروجی CSV/JSON بگیرید.
+>
 > برای اتصال مدل‌های هوش مصنوعی: آدرس MCP یعنی `http://localhost:4000/mcp` را در هر کلاینت MCP (Claude، Cursor،
 > VS Code، Codex …) وارد کنید، یا از صفحه «دستیار هوش مصنوعی» با هر مدل سازگار با OpenAI (پیش‌فرض) یا Anthropic گفتگو کنید.
 >
@@ -108,6 +111,33 @@ headers, post data, response bodies, console messages, cookies, local/session st
 downloaded JS/CSS sources. Plain text or regex, optionally case-sensitive; useful for finding
 API keys, tokens or where a value comes from.
 
+## Interactive scraper
+
+Open a site, pick the parts you want on a live picture of the page and get their data as a table —
+no code and no selectors to write.
+
+1. **Interactive scraper** page → enter a URL → *Open site*. The page is streamed live over a
+   **WebSocket** (`/ws/live`, Chrome screencast: frames are sent only when the page repaints) and you can
+   use it like a browser (*Browse* mode: click, scroll, type).
+2. Switch to **Select** mode: the element under the cursor is outlined. Click it to add it as a column.
+3. If it repeats on the page (products, articles, table rows, cards…) you are asked whether to extract
+   **every item of the list** — the list is detected automatically. Then click other parts of one item
+   (price, image, link…) to add more columns; selectors are made relative to the item, so every row lines
+   up even when some items lack a field.
+4. Optional: *Pick on page* the "next page" button and set the number of pages.
+5. **Extract all pages & save** → table preview, `scrapes/<name>-<time>.csv` (UTF-8 with BOM, opens in Excel)
+   and `.json` in the session folder, downloadable from the page.
+
+Every column can be edited: name, what to take (text, link, image/source, attribute, HTML, form value) and
+its CSS selector. Matches are highlighted on the live view in the column's colour. Save the set of columns
+as a **recipe** to run it again later — from the page, or from an AI model through MCP
+(`extractor_run_recipe`, also `extractor_scrape` for ad-hoc extraction). Recipes live in `output/recipes/`.
+
+HTTP API: `POST /api/scraper/preview`, `POST /api/scraper/run`, `POST /api/scraper/count`,
+`GET|POST /api/scraper/recipes`, `DELETE /api/scraper/recipes/{name}`.
+
+The *Live session* page uses the same WebSocket view.
+
 ## MCP server & AI models
 
 The extractor is also an **MCP server** (Model Context Protocol), so any MCP client or model can drive the
@@ -117,7 +147,7 @@ with the full DevTools data on top. Apps that call a model API directly can use 
 
 ```
 MCP clients (Claude, Cursor, VS Code, Codex…)  ── stdio  or  http://localhost:4000/mcp ─┐
-Apps using OpenAI-compatible APIs               ── /v1/tools  (+ /v1/tools/call)         ├─ 20 extractor_* tools ─ one shared session ─ Chromium
+Apps using OpenAI-compatible APIs               ── /v1/tools  (+ /v1/tools/call)         ├─ 23 extractor_* tools ─ one shared session ─ Chromium
 Apps using the Anthropic API                    ── /v1/tools?format=anthropic            │
 Built-in agent (dashboard page / npm run agent) ─────────────────────────────────────────┘
 ```
@@ -188,6 +218,9 @@ tool, and the Claude API through its MCP connector (`mcp_servers` + an `mcp_tool
 | `extractor_console_messages` | Console messages | `sessionId`, `level`, `contains`, `limit` | ✓ |
 | `extractor_get_collector_data` | Collector data | `sessionId`, `collector`, `path`, `maxChars` | ✓ |
 | `extractor_search` | Search session | `sessionId`, `query`, `regex`, `caseSensitive`, `limit` | ✓ |
+| `extractor_scrape` | Scrape data | `itemSelector`, `fields`, `nextSelector`, `maxPages`, `name`, `maxRows` |  |
+| `extractor_list_recipes` | List scraping recipes | — | ✓ |
+| `extractor_run_recipe` | Run scraping recipe | `name`, `url`, `maxPages`, `maxRows` |  |
 | `extractor_export` | Export | `sessionId`, `format`, `language` |  |
 
 Like Playwright MCP, the page is read through an accessibility snapshot with element refs
@@ -409,10 +442,13 @@ src/
 ├── collectors/             # one module per collector + registry.ts
 ├── server/
 │   ├── server.ts           # dashboard HTTP API + live events (SSE)
-│   └── aiRoutes.ts         # /mcp, /v1/tools gateway, /api/agent
+│   ├── aiRoutes.ts         # /mcp, /v1/tools gateway, /api/agent
+│   ├── liveSocket.ts       # /ws/live: screencast frames + input over WebSocket
+│   └── scraperRoutes.ts    # /api/scraper/*
 ├── mcp/                    # MCP server (stdio + Streamable HTTP)
+├── scraper/                # interactive scraper: in-page picker, lists, extraction, recipes
 ├── ai/
-│   ├── tools.ts            # the 20 tools (zod schemas), shared by MCP, gateway and agent
+│   ├── tools.ts            # the 23 tools (zod schemas), shared by MCP, gateway and agent
 │   ├── gateway.ts          # OpenAI / Anthropic tool formats
 │   ├── agent.ts            # agent loop: OpenAI-compatible + Anthropic
 │   └── cli.ts              # npm run agent

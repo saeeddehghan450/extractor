@@ -1,7 +1,7 @@
 // Thin wrapper around the dashboard API
 import type {
   Analysis, Config, ConfigPatch, EmulationOptions, FileEntry, LiveState, Meta, NetworkRequest, NetworkResponse, SearchResult,
-  SessionSummary, SnapshotSummary
+  SessionSummary, SnapshotSummary, ScrapeRecipe
 } from './types.js';
 
 async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
@@ -43,6 +43,16 @@ export const api = {
     request<{ request: NetworkRequest | null; response: NetworkResponse | null }>('GET', `/api/session/request/${encodeURIComponent(id)}`),
 
   liveHarUrl: () => '/api/session/har',
+
+  scraperPreview: (recipe: ScrapeRecipe) =>
+    request<{ rows: Record<string, string | null>[]; url: string }>('POST', '/api/scraper/preview', { recipe }),
+  scraperRun: (recipe: ScrapeRecipe) =>
+    request<{ rows: Record<string, string | null>[]; pages: number; url: string; stoppedBecause: string; sessionId: string; files: { json: string; csv: string } | null }>('POST', '/api/scraper/run', { recipe }),
+  scraperCount: (selector: string, itemSelector?: string) =>
+    request<{ count: number; valid: boolean }>('POST', '/api/scraper/count', { selector, itemSelector }),
+  recipes: () => request<(ScrapeRecipe & { updatedAt: string })[]>('GET', '/api/scraper/recipes'),
+  saveRecipe: (recipe: ScrapeRecipe) => request<ScrapeRecipe>('POST', '/api/scraper/recipes', { recipe }),
+  deleteRecipe: (name: string) => request<{ ok: boolean }>('DELETE', `/api/scraper/recipes/${encodeURIComponent(name)}`),
 
   sessions: () => request<SessionSummary[]>('GET', '/api/sessions'),
   savedSession: (id: string) => request<SessionSummary>('GET', `/api/sessions/${sid(id)}`),

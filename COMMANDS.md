@@ -55,6 +55,13 @@ docker cp devtools-extractor:/data/output ./output
 docker compose down            # add -v to delete the data volume
 ```
 
+### Interactive scraper
+Dashboard → *Interactive scraper*: open a URL, switch to *Select*, click the data you want, *Extract all pages & save*.
+```bash
+curl -X POST localhost:4000/api/scraper/run -H 'Content-Type: application/json' \
+  -d '{"recipe":{"itemSelector":"li.product","fields":[{"name":"title","selector":"a.title","extract":"text"}],"nextSelector":"a.next","maxPages":5}}'
+```
+
 ### MCP & AI
 ```bash
 npm run mcp                          # MCP server on stdio

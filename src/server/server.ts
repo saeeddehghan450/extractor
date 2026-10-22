@@ -13,6 +13,8 @@ import { COLLECTORS } from '../collectors/registry';
 import { ExtractorSession, packageVersion } from '../core/session';
 import { ControllerError, controller } from '../core/controller';
 import { RouteError, handleAiRoute } from './aiRoutes';
+import { ScraperRouteError, handleScraperRoute } from './scraperRoutes';
+import { attachLiveSocket } from './liveSocket';
 import { DEVICE_PRESETS, NETWORK_PRESETS } from '../core/emulation';
 import { buildHar } from '../core/har';
 import { ReportLang, renderReport } from '../core/report';
@@ -204,6 +206,7 @@ function checkOrigin(req: http.IncomingMessage) {
 
 async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, url: URL) {
   checkOrigin(req);
+  if (await handleScraperRoute(req, res, url, readBody)) return;
   const current = controller.current;
   const method = req.method || 'GET';
   const parts = url.pathname.replace(/^\/api\/?/, '').split('/').filter(Boolean).map(decodeURIComponent);
@@ -401,7 +404,7 @@ function handleStatic(res: http.ServerResponse, pathname: string) {
 }
 
 export function createServer(): http.Server {
-  return http.createServer(async (req, res) => {
+  const server = http.createServer(async (req, res) => {
     const url = new URL(req.url || '/', 'http://localhost');
     try {
       checkHost(req);
@@ -414,13 +417,15 @@ export function createServer(): http.Server {
       if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'Method not allowed');
       return handleStatic(res, url.pathname);
     } catch (e) {
-      const status = e instanceof HttpError || e instanceof ControllerError || e instanceof RouteError ? e.status : 500;
+      const status = e instanceof HttpError || e instanceof ControllerError || e instanceof RouteError || e instanceof ScraperRouteError ? e.status : 500;
       const message = (e as Error).message.split('\n')[0];
       if (status >= 500) error(`${req.method} ${url.pathname}: ${message}`);
       if (!res.headersSent) sendJSON(res, status, { error: message });
       else res.end();
     }
   });
+  attachLiveSocket(server);
+  return server;
 }
 
 export async function stopCurrentSession(): Promise<void> {
