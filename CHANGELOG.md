@@ -1,3 +1,30 @@
+# 📝 CHANGELOG
+
+## 2.0.0 — Web dashboard & reliable collectors
+
+### Added
+- Web dashboard (`npm start`): live session with browser preview and remote control (click, scroll,
+  type, navigate), live network/console/log panels, request inspector, snapshot timeline,
+  collectors & presets page, saved-results explorer (overview insights, screenshots, JSON viewer,
+  file browser) and settings. Persian (RTL) / English, dark / light theme.
+- Session engine (`src/core/session.ts`): one output folder per session, snapshots on every click,
+  manual snapshots, final snapshot, graceful finish when the browser/tab is closed.
+- Presets in the CLI (`npm run collectors presets`, `npm run collectors preset <name>`).
+- End-to-end tests (`npm test`) with a local fixture site.
+
+### Fixed
+- Final analysis was never written: the process exited as soon as the browser closed.
+- CSS collector navigated the page away (`page.goto` on each stylesheet).
+- Event listeners: CDP was given a `nodeId` as `objectId`; listeners of ancestors are now included.
+- CSS/computed styles: the DOM/CSS domains are now enabled before use.
+- Heap snapshot, service worker and performance trace collectors returned nothing (wrong CDP usage / race).
+- IndexedDB object stores were read asynchronously after the result was returned.
+- WebGL collector created contexts on the page's canvases.
+- Click listener was installed twice; click selectors were not unique.
+- Network collector only watched the first tab and read redirect bodies.
+
+---
+
 # 📝 COMPLETE CHANGELOG
 
 ## Implementation: Collector Activation & Module Organization

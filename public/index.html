@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DevTools Extractor</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/app.css">
+  <script>
+    // apply saved theme/lang before first paint
+    try {
+      var t = localStorage.getItem('dx-theme');
+      if (t) document.documentElement.dataset.theme = t;
+      var l = localStorage.getItem('dx-lang');
+      if (l === 'en') { document.documentElement.lang = 'en'; document.documentElement.dir = 'ltr'; }
+    } catch (e) {}
+  </script>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="brand-logo" aria-hidden="true">
+          <svg viewBox="0 0 32 32"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--accent)"/><stop offset="1" stop-color="var(--accent-2)"/></linearGradient></defs><rect x="2" y="2" width="28" height="28" rx="8" fill="url(#lg)"/><path d="M10 12l-3 4 3 4M22 12l3 4-3 4M18 9l-4 14" stroke="#fff" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div class="brand-text">
+          <strong>DevTools Extractor</strong>
+          <span data-i18n="brand.tagline"></span>
+        </div>
+      </div>
+      <nav class="nav" id="nav">
+        <a href="#/live" data-route="live"><i data-icon="activity"></i><span data-i18n="nav.live"></span></a>
+        <a href="#/collectors" data-route="collectors"><i data-icon="layers"></i><span data-i18n="nav.collectors"></span></a>
+        <a href="#/sessions" data-route="sessions"><i data-icon="archive"></i><span data-i18n="nav.sessions"></span></a>
+        <a href="#/settings" data-route="settings"><i data-icon="settings"></i><span data-i18n="nav.settings"></span></a>
+      </nav>
+      <div class="sidebar-foot">
+        <div class="conn" id="conn"><span class="dot"></span><span id="connText"></span></div>
+        <div class="foot-actions">
+          <button class="icon-btn" id="langBtn" title="Language"><span id="langLabel">EN</span></button>
+          <button class="icon-btn" id="themeBtn" data-i18n-title="theme.toggle"><i data-icon="moon"></i></button>
+        </div>
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <button class="icon-btn menu-btn" id="menuBtn" aria-label="menu"><i data-icon="menu"></i></button>
+        <div class="topbar-title">
+          <h1 id="pageTitle"></h1>
+          <p id="pageSubtitle"></p>
+        </div>
+        <div class="topbar-status" id="topStatus"></div>
+      </header>
+      <main class="content" id="view"></main>
+    </div>
+  </div>
+
+  <div class="drawer-backdrop" id="drawerBackdrop"></div>
+  <aside class="drawer" id="drawer" aria-hidden="true">
+    <div class="drawer-head">
+      <h3 id="drawerTitle"></h3>
+      <button class="icon-btn" id="drawerClose"><i data-icon="x"></i></button>
+    </div>
+    <div class="drawer-body" id="drawerBody"></div>
+  </aside>
+
+  <div class="toasts" id="toasts"></div>
+
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>

@@ -13,14 +13,15 @@
  *   ts-node src/bin/collector-cli.ts disable-all
  */
 
-import { 
-  loadConfig, 
-  enableCollector, 
-  disableCollector, 
-  getEnabledCollectors,
+import {
+  loadConfig,
+  enableCollector,
+  disableCollector,
   isCollectorEnabled,
   saveConfig
 } from '../utils/configManager';
+import { COLLECTOR_NAMES } from '../collectors/registry';
+import { applyPreset, isPresetName, listPresets, PRESETS } from '../utils/presets';
 
 const command = process.argv[2];
 const arg = process.argv[3];
@@ -40,21 +41,11 @@ Commands:
   disable-all       - Disable all collectors
   toggle <name>     - Toggle a collector on/off
   status <name>     - Show status of a specific collector
+  presets           - List available presets
+  preset <name>     - Apply a preset (${Object.keys(PRESETS).join(', ')})
 
 Collector Names:
-  - network
-  - console
-  - elements
-  - scripts
-  - css
-  - application
-  - security
-  - performance
-  - accessibility
-  - media
-  - webgl
-  - memory
-  - serviceWorker
+${COLLECTOR_NAMES.map(n => `  - ${n}`).join('\n')}
 
 Examples:
   ts-node src/bin/collector-cli.ts list
@@ -171,6 +162,21 @@ try {
       const reset = '\x1b[0m';
       console.log(`\n${statusColor}${arg}: ${statusText}${reset}`);
       console.log(`Description: ${config.collectors[arg].description}\n`);
+      break;
+    }
+
+    case 'presets': {
+      listPresets();
+      break;
+    }
+
+    case 'preset': {
+      if (!arg || !isPresetName(arg)) {
+        console.error(`❌ Error: Unknown preset "${arg ?? ''}". Available: ${Object.keys(PRESETS).join(', ')}`);
+        process.exit(1);
+      }
+      applyPreset(arg);
+      console.log(`✓ Applied preset: ${PRESETS[arg].name}`);
       break;
     }
 

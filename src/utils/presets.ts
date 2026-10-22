@@ -111,7 +111,9 @@ export const PRESETS = {
 /**
  * Apply a preset configuration
  */
-export function applyPreset(presetName: keyof typeof PRESETS): void {
+export type PresetName = keyof typeof PRESETS;
+
+export function applyPreset(presetName: PresetName): void {
   const preset = PRESETS[presetName];
   if (!preset) {
     throw new Error(`Unknown preset: ${presetName}`);
@@ -119,11 +121,14 @@ export function applyPreset(presetName: keyof typeof PRESETS): void {
 
   const config = loadConfig();
   for (const [collectorName, enabled] of Object.entries(preset.collectors)) {
-    config.collectors[collectorName].enabled = enabled;
+    if (config.collectors[collectorName]) config.collectors[collectorName].enabled = enabled;
   }
 
   saveConfig(config);
-  console.log(`✓ Applied preset: ${preset.name}`);
+}
+
+export function isPresetName(name: string): name is PresetName {
+  return Object.prototype.hasOwnProperty.call(PRESETS, name);
 }
 
 /**
@@ -132,10 +137,11 @@ export function applyPreset(presetName: keyof typeof PRESETS): void {
 export function listPresets(): void {
   console.log('\n📋 Available Presets:\n');
   Object.entries(PRESETS).forEach(([key, preset]) => {
-    const enabledCount = Object.values(preset.collectors).filter(v => v).length;
+    const values = Object.values(preset.collectors);
+    const enabledCount = values.filter(v => v).length;
     console.log(`  ${key.padEnd(12)} - ${preset.name}`);
     console.log(`                   ${preset.description}`);
-    console.log(`                   (${enabledCount}/13 collectors)`);
+    console.log(`                   (${enabledCount}/${values.length} collectors)`);
     console.log();
   });
 }
