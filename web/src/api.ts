@@ -49,6 +49,26 @@ export interface GraphQueryResult {
   ms: number;
 }
 
+export interface StorageStatus {
+  postgres: { enabled: boolean; connected: boolean; url: string; source: string; version?: string; readOnlyRole?: boolean; error?: string; counts?: Record<string, number> };
+  s3: { enabled: boolean; connected: boolean; endpoint: string; bucket: string; region: string; accessKeyId: string; hasSecret: boolean; source: string; error?: string; objects?: number; bytes?: number; sessions?: number };
+  autoArchive: boolean;
+}
+
+export interface ArchivedSession {
+  id: string; url: string | null; status: string | null; startedAt: string | null; archivedAt: string | null;
+  files: number | null; bytes: number | null; requests: number | null; local: boolean; inObjectStore: boolean;
+}
+
+export type SqlResult = GraphQueryResult;
+
+export interface ArchiveResult {
+  sessionId: string;
+  files: { total: number; uploaded: number; skipped: number; bytes: number } | null;
+  database: { requests: number; console: number; cookies: number; scrapes: number; records: number } | null;
+  removedLocal: boolean;
+}
+
 export interface GraphSyncResult { sessionId: string; requests: number; domains: number; pages: number; records: number; ms: number }
 
 export const api = {
@@ -87,6 +107,20 @@ export const api = {
     request<GraphQueryResult & { cypher: string; insight: { id: string; title: string; description: string } }>('POST', '/api/graph/insights', { id, sessionId }),
   graphSync: (sessionId?: string) => request<GraphSyncResult>('POST', '/api/graph/sync', { sessionId }),
   graphSyncAll: () => request<{ synced: GraphSyncResult[]; failed: { sessionId: string; error: string }[] }>('POST', '/api/graph/sync', { all: true }),
+
+  storageStatus: () => request<StorageStatus>('GET', '/api/storage/status'),
+  storageConfig: (body: {
+    postgres?: { enabled?: boolean; url?: string };
+    s3?: { enabled?: boolean; endpoint?: string; bucket?: string; accessKeyId?: string; secretAccessKey?: string };
+    autoArchive?: boolean;
+  }) => request<StorageStatus>('PUT', '/api/storage/config', body),
+  archivedSessions: () => request<ArchivedSession[]>('GET', '/api/storage/sessions'),
+  archiveSession: (sessionId: string, removeLocal = false) => request<ArchiveResult>('POST', '/api/storage/archive', { sessionId, removeLocal }),
+  archiveAll: () => request<{ archived: ArchiveResult[]; failed: { sessionId: string; error: string }[] }>('POST', '/api/storage/archive', { all: true }),
+  restoreSession: (sessionId: string) => request<{ sessionId: string; files: number; bytes: number }>('POST', '/api/storage/restore', { sessionId }),
+  forgetArchived: (sessionId: string) => request<{ ok: boolean }>('DELETE', `/api/storage/sessions/${encodeURIComponent(sessionId)}`),
+  storageSql: (sql: string, params: unknown[] = []) => request<SqlResult>('POST', '/api/storage/sql', { sql, params }),
+  storageSchema: () => request<{ schema: string }>('GET', '/api/storage/schema'),
 
   sessions: () => request<SessionSummary[]>('GET', '/api/sessions'),
   savedSession: (id: string) => request<SessionSummary>('GET', `/api/sessions/${sid(id)}`),

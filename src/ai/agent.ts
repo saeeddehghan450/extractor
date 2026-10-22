@@ -48,6 +48,7 @@ How to work:
 - When you are done with a site, call extractor_stop_session so the results (analysis, HAR, HTML report) are saved.
 - Saved sessions remain available: list them with extractor_list_sessions and pass their sessionId to the data tools.
 - A Neo4j knowledge graph links every synced session: sessions, pages, domains, requests, scripts, cookies, console messages, security headers, clicks and scraped records. For questions that compare sessions or follow relationships (which third parties a site talks to, which domains several sites share, where errors come from, what scraped records link to), call extractor_graph_schema once, then use extractor_graph_insight for the common analyses or extractor_graph_query with read-only Cypher. Sessions sync when they finish; call extractor_graph_sync if the data you need is missing (e.g. for the running session). If the graph tools report that Neo4j is not configured, fall back to the session tools.
+- Finished sessions are archived long-term: files in SeaweedFS, structured data in PostgreSQL. Use extractor_sql_query (after extractor_storage_status for the schema) for aggregations and history across many sessions and for filtering scraped records; use extractor_list_archived and extractor_restore_session to bring back a session whose local copy is gone.
 
 Base your answers on what the tools returned and cite concrete evidence (URLs, request ids, header names, console messages). If a tool fails, read the error and adjust instead of repeating the same call.`;
 

@@ -17,6 +17,8 @@ import { handleMcpHttp } from './http';
 import { controller } from '../core/controller';
 import { closeDriver } from '../graph/neo4jClient';
 import { flushSyncs, installAutoSync } from '../graph/sync';
+import { flushArchives, installAutoArchive } from '../storage/archive';
+import { closePool } from '../storage/postgres';
 import { error, info, logToStderr, success } from '../utils/logger';
 
 function parseArgs(argv: string[]) {
@@ -33,7 +35,8 @@ function parseArgs(argv: string[]) {
 
 async function shutdown(code = 0) {
   await controller.stopIfActive().catch(() => undefined);
-  await flushSyncs().catch(() => undefined);
+  await Promise.all([flushSyncs(), flushArchives()]).catch(() => undefined);
+  await closePool();
   await closeDriver();
   process.exit(code);
 }
@@ -41,6 +44,7 @@ async function shutdown(code = 0) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   installAutoSync();
+  installAutoArchive();
   if (args.help) {
     console.log(`DevTools Extractor MCP server
 

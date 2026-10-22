@@ -48,7 +48,7 @@ The image is based on the official Playwright image (Node.js + Chromium + system
 runs as a non-root user and forces headless mode (a container has no display).
 
 ```bash
-docker compose up -d --build        # dashboard on http://localhost:4000 + Neo4j knowledge graph
+docker compose up -d --build        # dashboard on http://localhost:4000 + Neo4j, PostgreSQL, SeaweedFS
 docker compose logs -f
 docker compose down                  # keep data;  add -v to delete the data volume
 ```
@@ -81,8 +81,9 @@ Notes:
   you need remote access.
 - When you upgrade `playwright` in `package.json`, change `PLAYWRIGHT_VERSION` in the
   `Dockerfile` to the same version.
-- Compose also starts the official `neo4j:2026.10.0-community` image (see *Knowledge graph*); set
-  `NEO4J_PASSWORD` in a `.env` file to replace the default password `extractor-graph`.
+- Compose also starts the official `neo4j:2026.10.0-community` (see *Knowledge graph*), `postgres:18.6` and
+  `chrislusf/seaweedfs:4.48` images (see *Long-term storage*). Replace the default passwords with a `.env` file:
+  `NEO4J_PASSWORD`, `POSTGRES_PASSWORD`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`.
 
 ## Emulation, exports and search
 
@@ -190,6 +191,46 @@ curl -X POST localhost:4000/api/graph/query -H 'Content-Type: application/json' 
 curl -X POST localhost:4000/api/graph/insights -H 'Content-Type: application/json' -d '{"id":"shared-domains"}'
 ```
 
+## Long-term storage (PostgreSQL + SeaweedFS)
+
+Finished sessions are archived so the data is kept independently of the local output folder:
+
+- **SeaweedFS** (official `chrislusf/seaweedfs` image, through its S3 gateway with the official AWS SDK) stores
+  every file of a session — screenshots, response bodies, sources, HAR, report, scrapes — as
+  `<bucket>/sessions/<sessionId>/<path>`. Unchanged files are not uploaded again.
+- **PostgreSQL** (official `postgres` image and the `pg` client) stores the structured data in the `extractor`
+  schema: `sessions`, `requests` (with headers), `console_messages`, `cookies`, `security_headers`, `scrapes`,
+  `scrape_records` (one `jsonb` row per scraped item) and `files` (the index of the stored files).
+
+```bash
+docker compose up -d                 # starts postgres:18.6 and chrislusf/seaweedfs:4.48 next to the dashboard
+# or on their own:
+docker run -d --name postgres -p 127.0.0.1:5432:5432 -e POSTGRES_USER=extractor -e POSTGRES_PASSWORD=change-me \
+  -v pg-data:/var/lib/postgresql postgres:18.6
+docker run -d --name seaweedfs -p 127.0.0.1:8333:8333 -e AWS_ACCESS_KEY_ID=extractor -e AWS_SECRET_ACCESS_KEY=change-me \
+  -v sw-data:/data chrislusf/seaweedfs:4.48 server -dir=/data -s3 -volume.max=0
+```
+
+Connect them on the dashboard's **Data storage** page or with `DATABASE_URL`, `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`,
+`S3_SECRET_ACCESS_KEY`, `S3_BUCKET` (default `extractor`). Either one can be used alone. With auto-archive on
+(default) a session is archived when it finishes; *Archive all sessions* stores older ones.
+
+The page lists archived sessions with *Restore* (download back into the output folder), *Remove local copy*
+(only after every file is verified in SeaweedFS; files are then served from SeaweedFS) and removal from the
+archive, plus a read-only SQL console with examples and an *Ask the assistant* box. Session pages get an
+*Archive* button.
+
+AI / MCP tools: `extractor_storage_status` (status + SQL schema), `extractor_sql_query`, `extractor_archive_session`,
+`extractor_list_archived`, `extractor_restore_session`. SQL is limited to one `SELECT` / `WITH` / `EXPLAIN` statement
+in a read-only transaction under a role that can only read the `extractor` schema; functions that read server
+files, run dynamic SQL or change settings are refused.
+
+```bash
+curl -X POST localhost:4000/api/storage/sql -H 'Content-Type: application/json' \
+  -d '{"sql":"SELECT host, count(*) FROM requests GROUP BY host ORDER BY 2 DESC"}'
+curl -X POST localhost:4000/api/storage/archive -H 'Content-Type: application/json' -d '{"all":true}'
+```
+
 ## MCP server & AI models
 
 The extractor is also an **MCP server** (Model Context Protocol), so any MCP client or model can drive the
@@ -278,6 +319,11 @@ tool, and the Claude API through its MCP connector (`mcp_servers` + an `mcp_tool
 | `extractor_graph_query` | Query the graph (Cypher) | `cypher`, `params`, `limit` | ✓ |
 | `extractor_graph_insight` | Graph insight | `id`, `sessionId`, `limit` | ✓ |
 | `extractor_graph_sync` | Sync sessions to the graph | `sessionId`, `all` |  |
+| `extractor_storage_status` | Storage status and SQL schema | — | ✓ |
+| `extractor_sql_query` | Query archived data (SQL) | `sql`, `params`, `limit` | ✓ |
+| `extractor_archive_session` | Archive session | `sessionId`, `all`, `removeLocal` |  |
+| `extractor_list_archived` | List archived sessions | `limit` | ✓ |
+| `extractor_restore_session` | Restore archived session | `sessionId`, `overwrite` |  |
 
 Like Playwright MCP, the page is read through an accessibility snapshot with element refs
 (`extractor_page_snapshot` → `button "Buy now" [ref=e5]` → `extractor_click {"ref": "e5"}`), which works
@@ -468,6 +514,9 @@ Environment variables:
 | `EXTRACTOR_AI_*`, `OPENAI_*`, `ANTHROPIC_*` | Agent settings, see *Built-in agent* |
 | `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`, `NEO4J_DATABASE` | Knowledge graph connection (overrides the dashboard settings) |
 | `NEO4J_AUTO_SYNC=0` | Do not sync sessions automatically |
+| `DATABASE_URL` | PostgreSQL archive, e.g. `postgres://extractor:pw@localhost:5432/extractor` |
+| `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_BUCKET`, `S3_REGION` | SeaweedFS (or any S3 store) for session files |
+| `STORAGE_AUTO_ARCHIVE=0` | Do not archive sessions automatically |
 
 The dashboard listens on `127.0.0.1` only; it can drive a browser and read the output folder,
 so do not expose it on a public interface.
@@ -484,6 +533,9 @@ npm run dev:web      # recompile the dashboard on change (run next to npm start)
 npm test             # end-to-end tests (real headless Chromium against a local fixture site)
 # Neo4j tests run when a server is given:
 NEO4J_TEST_URI=bolt://127.0.0.1:7687 NEO4J_TEST_PASSWORD=… npm test
+# storage tests run when PostgreSQL and SeaweedFS are given:
+STORAGE_TEST_DATABASE_URL=postgres://… STORAGE_TEST_S3_ENDPOINT=http://127.0.0.1:8333 \
+  STORAGE_TEST_S3_KEY=… STORAGE_TEST_S3_SECRET=… npm test
 npm run build        # server -> dist/, dashboard -> public/js ; then: npm run start:prod
 ```
 
@@ -505,12 +557,14 @@ src/
 │   ├── aiRoutes.ts         # /mcp, /v1/tools gateway, /api/agent
 │   ├── liveSocket.ts       # /ws/live: screencast frames + input over WebSocket
 │   ├── scraperRoutes.ts    # /api/scraper/*
-│   └── graphRoutes.ts      # /api/graph/*
+│   ├── graphRoutes.ts      # /api/graph/*
+│   └── storageRoutes.ts    # /api/storage/*
 ├── graph/                  # Neo4j: connection + read-only queries, session sync, insights
+├── storage/                # PostgreSQL + SeaweedFS (S3): settings, schema, read-only SQL, archive / restore
 ├── mcp/                    # MCP server (stdio + Streamable HTTP)
 ├── scraper/                # interactive scraper: in-page picker, lists, extraction, recipes
 ├── ai/
-│   ├── tools.ts            # the 27 tools (zod schemas), shared by MCP, gateway and agent
+│   ├── tools.ts            # the 32 tools (zod schemas), shared by MCP, gateway and agent
 │   ├── gateway.ts          # OpenAI / Anthropic tool formats
 │   ├── agent.ts            # agent loop: OpenAI-compatible + Anthropic
 │   └── cli.ts              # npm run agent
@@ -520,7 +574,7 @@ src/
 web/
 ├── src/                    # dashboard source (TypeScript, no framework)
 │   ├── app.ts, store.ts, api.ts, types.ts, i18n.ts, ...
-│   └── views/              # live, scraper, collectors, sessions, graph, assistant, settings
+│   └── views/              # live, scraper, collectors, sessions, graph, storage, assistant, settings
 └── tsconfig.json           # browser build -> public/js
 public/                     # index.html, CSS and the compiled dashboard (public/js is generated)
 test/                       # end-to-end tests and fixture site

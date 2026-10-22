@@ -1,6 +1,6 @@
 {
   "name": "ultimate-devtools-extractor",
-  "version": "2.6.0",
+  "version": "2.7.0",
   "description": "Ultimate DevTools Extractor - TypeScript + Playwright + CDP, with a web dashboard, an MCP server and an LLM agent",
   "main": "dist/server/server.js",
   "scripts": {
@@ -27,15 +27,18 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.1.0",
+    "@aws-sdk/client-s3": "^3.1155.0",
     "@modelcontextprotocol/sdk": "^1.32.1",
     "neo4j-driver": "^6.2.0",
     "openai": "^7.42.0",
+    "pg": "^8.23.1",
     "playwright": "^1.64.1",
     "ws": "^8.22.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
+    "@types/pg": "^8.23.1",
     "@types/ws": "^8.18.2",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"

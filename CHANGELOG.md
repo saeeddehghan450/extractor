@@ -1,5 +1,27 @@
 # 📝 CHANGELOG
 
+## 2.7.0 — Long-term storage: PostgreSQL + SeaweedFS
+
+### Added
+- Session archive: every file of a finished session goes to SeaweedFS (S3 gateway, official AWS SDK;
+  unchanged files are skipped) and the structured data to PostgreSQL (`pg` client, `extractor` schema:
+  sessions, requests with headers, console messages, cookies, security headers, scrapes, scraped records as
+  `jsonb`, file index). Archiving is idempotent; sessions are archived automatically when they finish.
+- Restore archived sessions into the output folder; remove the local copy once every file is verified in
+  SeaweedFS (the dashboard then serves files straight from SeaweedFS).
+- Read-only SQL over the archive: one `SELECT` / `WITH` / `EXPLAIN` statement, read-only transaction, a
+  role that can only read the `extractor` schema, file / dynamic-SQL / settings functions refused.
+- AI / MCP tools `extractor_storage_status`, `extractor_sql_query`, `extractor_archive_session`,
+  `extractor_list_archived`, `extractor_restore_session` (32 tools in total); the agent's instructions
+  explain when to use them.
+- Dashboard *Data storage* page (connections, archived sessions with restore / remove local copy, SQL console,
+  hand-off to the assistant) and an *Archive* button on session pages.
+- `/api/storage/*` endpoints; `postgres:18.6` and `chrislusf/seaweedfs:4.48` services in `docker-compose.yml`;
+  storage tests (run with `STORAGE_TEST_DATABASE_URL` / `STORAGE_TEST_S3_ENDPOINT`).
+
+### Security
+- The PostgreSQL URL is masked and S3 secrets are never returned by `/api/config` or `/api/storage/status`.
+
 ## 2.6.0 — Neo4j knowledge graph
 
 ### Added

@@ -27,6 +27,10 @@ import { Recipe, getRecipe, listRecipes, normalizeRecipe, runRecipe, saveScrape,
 import { graphStatus, runReadQuery } from '../graph/neo4jClient';
 import { INSIGHTS, runInsight } from '../graph/insights';
 import { GRAPH_SCHEMA, syncAll, syncInBackground, syncSession } from '../graph/sync';
+import { SQL_SCHEMA, postgresStatus, runReadOnlySql } from '../storage/postgres';
+import { s3Status } from '../storage/objectStore';
+import { archiveAll, archiveSession, listArchived, restoreSession } from '../storage/archive';
+import { autoArchiveEnabled } from '../storage/settings';
 
 export interface ToolImage {
   /** base64, without the data: prefix */
@@ -840,6 +844,91 @@ export const TOOLS: ExtractorTool[] = [
         return out({ synced: r.synced.length, failed: r.failed, sessions: r.synced.map(x => x.sessionId) });
       }
       return out(await syncSession(a.sessionId));
+    }
+  }),
+
+  // -------------------------------------------------------------------------
+  // long-term storage (PostgreSQL + SeaweedFS)
+  // -------------------------------------------------------------------------
+
+  defineTool({
+    name: 'extractor_storage_status',
+    title: 'Storage status and SQL schema',
+    description:
+      'Status of the long-term storage - PostgreSQL (structured data of archived sessions) and SeaweedFS (their files) - ' +
+      'with row / object counts and the SQL schema. Read this before writing SQL.',
+    input: z.object({}),
+    readOnly: true,
+    async run() {
+      const [pg, s3] = await Promise.all([postgresStatus(), s3Status()]);
+      return out(`${SQL_SCHEMA}\n\nStatus: ${JSON.stringify({ postgres: pg, seaweedfs: s3, autoArchive: autoArchiveEnabled() }, null, 2)}`);
+    }
+  }),
+
+  defineTool({
+    name: 'extractor_sql_query',
+    title: 'Query archived data (SQL)',
+    description:
+      'Run one read-only SQL query (SELECT / WITH / EXPLAIN) on the PostgreSQL archive: sessions, requests (with headers), ' +
+      'console messages, cookies, security headers, scrapes and scraped records (jsonb "data"). Good for aggregations, ' +
+      'history across many sessions and filtering scraped data, e.g. SELECT data->>\'price\' FROM scrape_records. ' +
+      'Use $1, $2 ... with "params" for values.',
+    input: z.object({
+      sql: z.string().describe('One SELECT / WITH query; tables are in the "extractor" schema (already on the search path)'),
+      params: z.array(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
+      limit: z.number().int().min(1).max(2000).optional().describe('Rows to return (default 200)')
+    }),
+    readOnly: true,
+    async run(a) {
+      return out(await runReadOnlySql(a.sql, a.params || [], { limit: a.limit ?? 200 }));
+    }
+  }),
+
+  defineTool({
+    name: 'extractor_archive_session',
+    title: 'Archive session',
+    description:
+      'Store a finished session (default: the latest) or all sessions long-term: files to SeaweedFS, data to PostgreSQL. ' +
+      'Unchanged files are not uploaded again. removeLocal deletes the local folder afterwards (it can be restored). ' +
+      'Sessions are archived automatically when they finish.',
+    input: z.object({
+      sessionId: z.string().optional(),
+      all: z.boolean().optional().describe('Archive every finished session'),
+      removeLocal: z.boolean().optional().describe('Delete the local copy after archiving (needs SeaweedFS)')
+    }),
+    readOnly: false,
+    destructive: true,
+    async run(a) {
+      if (a.all) {
+        const r = await archiveAll();
+        return out({ archived: r.archived.map(x => x.sessionId), failed: r.failed });
+      }
+      return out(await archiveSession(a.sessionId, { removeLocal: a.removeLocal }));
+    }
+  }),
+
+  defineTool({
+    name: 'extractor_list_archived',
+    title: 'List archived sessions',
+    description: 'Sessions kept in long-term storage, with file counts, sizes and whether a local copy exists.',
+    input: z.object({ limit: z.number().int().min(1).max(1000).optional() }),
+    readOnly: true,
+    async run(a) {
+      return out(await listArchived(a.limit ?? 100));
+    }
+  }),
+
+  defineTool({
+    name: 'extractor_restore_session',
+    title: 'Restore archived session',
+    description: 'Download an archived session from SeaweedFS into the output folder so every session tool can read it again.',
+    input: z.object({
+      sessionId: z.string(),
+      overwrite: z.boolean().optional().describe('Replace an existing local copy')
+    }),
+    readOnly: false,
+    async run(a) {
+      return out(await restoreSession(a.sessionId, { overwrite: a.overwrite }));
     }
   }),
 ];

@@ -70,6 +70,16 @@ curl -X POST localhost:4000/api/graph/sync -H 'Content-Type: application/json' -
 curl -X POST localhost:4000/api/graph/query -H 'Content-Type: application/json' -d '{"cypher":"MATCH (d:Domain) RETURN d.name LIMIT 10"}'
 ```
 
+### Long-term storage (PostgreSQL + SeaweedFS)
+```bash
+docker compose up -d postgres seaweedfs         # official postgres:18.6 + chrislusf/seaweedfs:4.48
+DATABASE_URL=postgres://extractor:extractor-db@localhost:5432/extractor \
+S3_ENDPOINT=http://localhost:8333 S3_ACCESS_KEY_ID=extractor S3_SECRET_ACCESS_KEY=extractor-files npm start
+curl -X POST localhost:4000/api/storage/archive -H 'Content-Type: application/json' -d '{"all":true}'
+curl -X POST localhost:4000/api/storage/restore -H 'Content-Type: application/json' -d '{"sessionId":"<id>"}'
+curl -X POST localhost:4000/api/storage/sql -H 'Content-Type: application/json' -d '{"sql":"SELECT id, url FROM sessions"}'
+```
+
 ### MCP & AI
 ```bash
 npm run mcp                          # MCP server on stdio

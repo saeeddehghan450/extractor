@@ -132,6 +132,7 @@ function mountDetail(el: HTMLElement, id: string, { setHeader }: ViewContext): v
           ${summary.exports?.har ? `<a class="btn" href="${api.fileUrl(id, summary.exports.har, true)}" title="${esc(t('sessions.har'))}">${icon('download')}HAR</a>` : ''}
           ${summary.analysisFile ? `<a class="btn" href="${api.fileUrl(id, 'analysis.json', true)}" title="${esc(t('sessions.download'))}">${icon('download')}JSON</a>` : ''}
           <button class="btn" id="askBtn">${icon('zap')}${esc(t('sessions.askAi'))}</button>
+          ${summary.analysisFile && summary.status === 'finished' ? `<button class="btn ghost" id="archiveBtn">${icon('upload')}${esc(t('sessions.archive'))}</button>` : ''}
           ${summary.analysisFile ? `<button class="btn ghost" id="graphBtn">${icon('share')}${esc(t('sessions.graphSync'))}</button>` : ''}
           <button class="btn danger" id="delBtn">${icon('trash')}${esc(t('common.delete'))}</button>
         </div>
@@ -151,6 +152,18 @@ function mountDetail(el: HTMLElement, id: string, { setHeader }: ViewContext): v
       try {
         const r = await api.graphSync(id);
         toast(t('sessions.graphSynced', { n: fmtNumber(r.requests) }), 'ok');
+      } catch (e) {
+        toast(errMsg(e), 'err');
+      } finally {
+        b.disabled = false;
+      }
+    });
+    el.querySelector<HTMLButtonElement>('#archiveBtn')?.addEventListener('click', async ev => {
+      const b = ev.currentTarget as HTMLButtonElement;
+      b.disabled = true;
+      try {
+        const r = await api.archiveSession(id);
+        toast(t('sessions.archived', { n: fmtNumber(r.files?.uploaded ?? 0) }), 'ok');
       } catch (e) {
         toast(errMsg(e), 'err');
       } finally {

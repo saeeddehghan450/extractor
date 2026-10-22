@@ -15,6 +15,9 @@ import { ControllerError, controller } from '../core/controller';
 import { RouteError, handleAiRoute } from './aiRoutes';
 import { ScraperRouteError, handleScraperRoute } from './scraperRoutes';
 import { handleGraphRoute } from './graphRoutes';
+import { handleStorageRoute, sendArchivedFile } from './storageRoutes';
+import { StorageError, maskUrl } from '../storage/settings';
+import { flushArchives, installAutoArchive } from '../storage/archive';
 import { GraphError } from '../graph/neo4jClient';
 import { flushSyncs, installAutoSync } from '../graph/sync';
 import { attachLiveSocket } from './liveSocket';
@@ -208,17 +211,30 @@ function checkOrigin(req: http.IncomingMessage) {
 // API
 // ---------------------------------------------------------------------------
 
-/** The config without secrets (the Neo4j password is replaced by a flag). */
+/** The config without secrets (passwords and keys are replaced by flags, URLs are masked). */
 function publicConfig(cfg: Config) {
-  if (!cfg.neo4j) return cfg;
-  const { password, ...neo4j } = cfg.neo4j;
-  return { ...cfg, neo4j: { ...neo4j, hasPassword: !!password } };
+  const out: Record<string, unknown> = { ...cfg };
+  if (cfg.neo4j) {
+    const { password, ...neo4j } = cfg.neo4j;
+    out.neo4j = { ...neo4j, hasPassword: !!password };
+  }
+  if (cfg.storage) {
+    const { postgres, s3, ...rest } = cfg.storage;
+    const { secretAccessKey, ...s3Public } = s3 || {};
+    out.storage = {
+      ...rest,
+      ...(postgres ? { postgres: { enabled: postgres.enabled, url: postgres.url ? maskUrl(postgres.url) : undefined } } : {}),
+      ...(s3 ? { s3: { ...s3Public, hasSecret: !!secretAccessKey } } : {})
+    };
+  }
+  return out;
 }
 
 async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, url: URL) {
   checkOrigin(req);
   if (await handleScraperRoute(req, res, url, readBody)) return;
   if (await handleGraphRoute(req, res, url, readBody)) return;
+  if (await handleStorageRoute(req, res, url, readBody)) return;
   const current = controller.current;
   const method = req.method || 'GET';
   const parts = url.pathname.replace(/^\/api\/?/, '').split('/').filter(Boolean).map(decodeURIComponent);
@@ -382,7 +398,11 @@ async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, ur
     if (method === 'GET' && parts[2] === 'file') {
       const rel = url.searchParams.get('path') || '';
       const file = resolveSessionFile(id, rel);
-      if (!file) throw new HttpError(404, 'File not found');
+      if (!file) {
+        // archived sessions whose local copy was removed are served from SeaweedFS
+        if (await sendArchivedFile(res, id, rel, url.searchParams.get('download') === '1')) return;
+        throw new HttpError(404, 'File not found');
+      }
       return sendFile(res, file, url.searchParams.get('download') === '1');
     }
   }
@@ -429,7 +449,7 @@ export function createServer(): http.Server {
       if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'Method not allowed');
       return handleStatic(res, url.pathname);
     } catch (e) {
-      const status = e instanceof HttpError || e instanceof ControllerError || e instanceof RouteError || e instanceof ScraperRouteError || e instanceof GraphError ? e.status : 500;
+      const status = e instanceof HttpError || e instanceof ControllerError || e instanceof RouteError || e instanceof ScraperRouteError || e instanceof GraphError || e instanceof StorageError ? e.status : 500;
       const message = (e as Error).message.split('\n')[0];
       if (status >= 500) error(`${req.method} ${url.pathname}: ${message}`);
       if (!res.headersSent) sendJSON(res, status, { error: message });
@@ -438,6 +458,7 @@ export function createServer(): http.Server {
   });
   attachLiveSocket(server);
   installAutoSync();
+  installAutoArchive();
   return server;
 }
 
@@ -465,7 +486,7 @@ if (require.main === module) {
     shuttingDown = true;
     warn('Shutting down...');
     await stopCurrentSession().catch(() => undefined);
-    await flushSyncs(2000).catch(() => undefined);
+    await Promise.all([flushSyncs(2000), flushArchives(10000)]).catch(() => undefined);
     for (const c of clients) c.end();
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 3000).unref();

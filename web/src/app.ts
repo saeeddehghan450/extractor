@@ -11,8 +11,9 @@ import * as settings from './views/settings.js';
 import * as assistant from './views/assistant.js';
 import * as scraper from './views/scraper.js';
 import * as graph from './views/graph.js';
+import * as storage from './views/storage.js';
 
-const routes: Record<string, { mount: MountFn }> = { live, scraper, collectors, sessions, graph, settings, assistant };
+const routes: Record<string, { mount: MountFn }> = { live, scraper, collectors, sessions, graph, storage, settings, assistant };
 let unmount: Unmount | null = null;
 let currentRoute = '';
 
