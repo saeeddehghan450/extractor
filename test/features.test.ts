@@ -126,8 +126,8 @@ test('dashboard API: report and search endpoints', { timeout: 120000 }, async ()
   const outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'extractor-api-'));
   process.env.EXTRACTOR_OUTPUT = outputRoot;
   // the store reads EXTRACTOR_OUTPUT when it is loaded
-  const { createServer } = await import('../src/server/server');
-  const server = createServer();
+  const { createServer } = await import('../src/server/app');
+  const server = await createServer();
   await new Promise<void>(r => server.listen(0, '127.0.0.1', () => r()));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   try {

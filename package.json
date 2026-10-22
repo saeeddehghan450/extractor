@@ -1,33 +1,65 @@
 {
   "name": "ultimate-devtools-extractor",
-  "version": "2.3.0",
-  "description": "Ultimate DevTools Extractor - TypeScript + Playwright + CDP, with a web dashboard",
-  "main": "dist/server/server.js",
+  "version": "3.0.0",
+  "description": "Ultimate DevTools Extractor - TypeScript + Playwright + CDP, with a Next.js dashboard on a NestJS server, an MCP server and an LLM agent",
+  "main": "dist/server/main.js",
   "scripts": {
-    "start": "npm run build:web && tsx src/server/server.ts",
-    "dashboard": "npm run build:web && tsx src/server/server.ts",
-    "dev:web": "tsc -p web --watch",
+    "start": "npm run build:web && tsx src/server/main.ts",
+    "dashboard": "npm run build:web && tsx src/server/main.ts",
+    "dev:web": "next dev web --port 3000",
     "extract": "tsx src/main.ts",
     "collectors": "tsx src/bin/collector-cli.ts",
+    "mcp": "tsx src/mcp/main.ts",
+    "agent": "tsx src/ai/cli.ts",
     "build": "tsc && npm run build:web",
-    "build:web": "tsc -p web",
-    "start:prod": "node dist/server/server.js",
+    "build:web": "next build web",
+    "start:prod": "node dist/server/main.js",
+    "start:mcp": "node dist/mcp/main.js",
     "typecheck": "tsc --noEmit && tsc -p web --noEmit",
     "test": "node --import tsx --test test/*.test.ts",
     "setup": "playwright install chromium",
-    "clean": "rm -rf dist output public/js"
+    "clean": "rm -rf dist output web/.next web/out",
+    "dev": "tsx watch src/server/dev.ts"
   },
   "author": "saeed dehghan",
   "license": "MIT",
   "engines": {
-    "node": ">=20"
+    "node": ">=20.19"
   },
   "dependencies": {
-    "playwright": "^1.64.1"
+    "@anthropic-ai/sdk": "^1.1.0",
+    "@aws-sdk/client-s3": "^3.1155.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@nestjs/common": "^12.2.0",
+    "@nestjs/core": "^12.2.0",
+    "@nestjs/platform-express": "^12.2.0",
+    "@nestjs/platform-ws": "^12.2.0",
+    "@nestjs/websockets": "^12.2.0",
+    "express": "^5.3.0",
+    "neo4j-driver": "^6.2.0",
+    "openai": "^7.42.0",
+    "pg": "^8.23.1",
+    "playwright": "^1.64.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "ws": "^8.22.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@types/express": "^5.0.6",
     "@types/node": "^26.6.5",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/ws": "^8.18.2",
+    "next": "^16.4.2",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"
+  },
+  "bin": {
+    "devtools-extractor-mcp": "dist/mcp/main.js",
+    "devtools-extractor-agent": "dist/ai/cli.js"
   }
 }

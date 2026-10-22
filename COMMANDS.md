@@ -55,12 +55,52 @@ docker cp devtools-extractor:/data/output ./output
 docker compose down            # add -v to delete the data volume
 ```
 
+### Interactive scraper
+Dashboard → *Interactive scraper*: open a URL, switch to *Select*, click the data you want, *Extract all pages & save*.
+```bash
+curl -X POST localhost:4000/api/scraper/run -H 'Content-Type: application/json' \
+  -d '{"recipe":{"itemSelector":"li.product","fields":[{"name":"title","selector":"a.title","extract":"text"}],"nextSelector":"a.next","maxPages":5}}'
+```
+
+### Knowledge graph (Neo4j)
+```bash
+docker compose up -d neo4j                      # official neo4j:2026.10.0-community (Browser: http://localhost:7474)
+NEO4J_URI=bolt://localhost:7687 NEO4J_PASSWORD=extractor-graph npm start
+curl -X POST localhost:4000/api/graph/sync -H 'Content-Type: application/json' -d '{"all":true}'
+curl -X POST localhost:4000/api/graph/query -H 'Content-Type: application/json' -d '{"cypher":"MATCH (d:Domain) RETURN d.name LIMIT 10"}'
+```
+
+### Long-term storage (PostgreSQL + SeaweedFS)
+```bash
+docker compose up -d postgres seaweedfs         # official postgres:18.6 + chrislusf/seaweedfs:4.48
+DATABASE_URL=postgres://extractor:extractor-db@localhost:5432/extractor \
+S3_ENDPOINT=http://localhost:8333 S3_ACCESS_KEY_ID=extractor S3_SECRET_ACCESS_KEY=extractor-files npm start
+curl -X POST localhost:4000/api/storage/archive -H 'Content-Type: application/json' -d '{"all":true}'
+curl -X POST localhost:4000/api/storage/restore -H 'Content-Type: application/json' -d '{"sessionId":"<id>"}'
+curl -X POST localhost:4000/api/storage/sql -H 'Content-Type: application/json' -d '{"sql":"SELECT id, url FROM sessions"}'
+```
+
+### MCP & AI
+```bash
+npm run mcp                          # MCP server on stdio
+npm run mcp -- --port 8931           # MCP server over HTTP: http://127.0.0.1:8931/mcp
+# (the dashboard also serves MCP at http://localhost:4000/mcp)
+claude mcp add --transport http devtools-extractor http://localhost:4000/mcp
+
+npm run agent -- --model <model> "Audit https://example.com"                       # OpenAI-compatible
+npm run agent -- --base-url http://localhost:11434/v1 --model <model> "…"           # Ollama / local
+npm run agent -- --provider anthropic "…"                                          # Claude
+curl http://localhost:4000/v1/tools                       # tools, OpenAI format
+curl "http://localhost:4000/v1/tools?format=anthropic"    # tools, Anthropic format
+```
+
 ### Development
 ```bash
 npm run setup       # install Chromium for Playwright
 npm run typecheck
-npm run build:web   # compile the dashboard (web/src -> public/js)
-npm run dev:web     # recompile the dashboard on every change
+npm run build:web   # build the Next.js dashboard (static export -> web/out)
+npm run dev         # NestJS server with reload (tsx watch)
+npm run dev:web     # Next.js dev server on :3000 with the API proxied to :4000
 npm test
 npm run clean       # remove dist/ and output/
 ```

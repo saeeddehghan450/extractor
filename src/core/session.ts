@@ -494,6 +494,25 @@ export class ExtractorSession extends EventEmitter {
     return out;
   }
 
+  /** Everything collected so far, shaped like analysis.json (used while the session is running). */
+  liveAnalysis(): Record<string, unknown> {
+    return {
+      meta: {
+        sessionId: this.id,
+        startedAt: this.startedAt,
+        targetUrl: this.options.url,
+        currentUrl: this.activePage?.url() ?? null,
+        collectors: this.enabledCollectors,
+        counts: this.counts(),
+        emulation: describeEmulation(this.emulation),
+        live: true
+      },
+      clicks: this.clicks,
+      snapshots: this.snapshots,
+      ...this.moduleData()
+    };
+  }
+
   private writeResults() {
     const modules = this.moduleData();
     for (const [name, data] of Object.entries(modules)) {

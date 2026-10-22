@@ -14,6 +14,38 @@ export interface CollectorConfig {
   description: string;
 }
 
+export interface Neo4jSettings {
+  enabled?: boolean;
+  uri?: string;
+  user?: string;
+  /** prefer the NEO4J_PASSWORD environment variable */
+  password?: string;
+  database?: string;
+  /** sync every finished session and every saved scrape automatically */
+  autoSync?: boolean;
+}
+
+/** Long-term storage: PostgreSQL (structured data) and SeaweedFS / any S3 store (files). */
+export interface StorageSettings {
+  postgres?: {
+    enabled?: boolean;
+    /** postgres://user:password@host:5432/database (prefer the DATABASE_URL environment variable) */
+    url?: string;
+  };
+  s3?: {
+    enabled?: boolean;
+    /** SeaweedFS S3 gateway, e.g. http://localhost:8333 */
+    endpoint?: string;
+    accessKeyId?: string;
+    /** prefer the S3_SECRET_ACCESS_KEY environment variable */
+    secretAccessKey?: string;
+    bucket?: string;
+    region?: string;
+  };
+  /** archive every finished session automatically */
+  autoArchive?: boolean;
+}
+
 export interface Config {
   targetUrl: string;
   headless: boolean;
@@ -27,6 +59,20 @@ export interface Config {
   port: number;
   /** Default device / network emulation, custom UA / headers and blocked URLs. */
   emulation: EmulationOptions;
+  /** Neo4j graph database (NEO4J_* environment variables take precedence). */
+  neo4j?: Neo4jSettings;
+  /** PostgreSQL + SeaweedFS archive (DATABASE_URL / S3_* environment variables take precedence). */
+  storage?: StorageSettings;
+  /** Optional defaults for the built-in agent (API keys belong in environment variables). */
+  ai?: {
+    provider?: 'openai' | 'anthropic';
+    model?: string;
+    baseURL?: string;
+    maxSteps?: number;
+    effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+    vision?: boolean;
+    fallbacks?: boolean;
+  };
   collectors: Record<string, CollectorConfig>;
 }
 
@@ -147,7 +193,13 @@ export function setCollectorEnabled(collectorName: string, enabled: boolean): vo
 /**
  * Merge a partial update into the config and persist it.
  */
-export function updateConfig(patch: Partial<Omit<Config, 'emulation'>> & {
+export function updateConfig(patch: Partial<Omit<Config, 'emulation' | 'neo4j' | 'storage'>> & {
+  neo4j?: Omit<Neo4jSettings, 'password'> & { password?: string | null };
+  storage?: {
+    postgres?: { enabled?: boolean; url?: string | null };
+    s3?: { enabled?: boolean; endpoint?: string; accessKeyId?: string; secretAccessKey?: string | null; bucket?: string; region?: string };
+    autoArchive?: boolean;
+  };
   collectors?: Record<string, Partial<CollectorConfig> | boolean>;
   emulation?: Partial<EmulationOptions>;
 }): Config {
@@ -171,6 +223,43 @@ export function updateConfig(patch: Partial<Omit<Config, 'emulation'>> & {
       width: w >= 320 ? Math.round(w) : cfg.viewport.width,
       height: h >= 240 ? Math.round(h) : cfg.viewport.height
     };
+  }
+  if (patch.neo4j && typeof patch.neo4j === 'object') {
+    const n = { ...(cfg.neo4j || {}) };
+    const p = patch.neo4j;
+    if (typeof p.enabled === 'boolean') n.enabled = p.enabled;
+    if (typeof p.autoSync === 'boolean') n.autoSync = p.autoSync;
+    for (const k of ['uri', 'user', 'database'] as const) {
+      if (typeof p[k] === 'string') n[k] = p[k]!.trim() || undefined;
+    }
+    // empty string keeps the stored password, null removes it
+    if (p.password === null) delete n.password;
+    else if (typeof p.password === 'string' && p.password) n.password = p.password;
+    next.neo4j = n;
+  }
+  if (patch.storage && typeof patch.storage === 'object') {
+    const st: StorageSettings = { ...(cfg.storage || {}) };
+    const p = patch.storage;
+    if (typeof p.autoArchive === 'boolean') st.autoArchive = p.autoArchive;
+    if (p.postgres && typeof p.postgres === 'object') {
+      const pg = { ...(st.postgres || {}) };
+      if (typeof p.postgres.enabled === 'boolean') pg.enabled = p.postgres.enabled;
+      // empty string keeps the stored URL (it contains the password), null removes it
+      if (p.postgres.url === null) delete pg.url;
+      else if (typeof p.postgres.url === 'string' && p.postgres.url.trim()) pg.url = p.postgres.url.trim();
+      st.postgres = pg;
+    }
+    if (p.s3 && typeof p.s3 === 'object') {
+      const s3 = { ...(st.s3 || {}) };
+      if (typeof p.s3.enabled === 'boolean') s3.enabled = p.s3.enabled;
+      for (const k of ['endpoint', 'accessKeyId', 'bucket', 'region'] as const) {
+        if (typeof p.s3[k] === 'string') s3[k] = p.s3[k]!.trim() || undefined;
+      }
+      if (p.s3.secretAccessKey === null) delete s3.secretAccessKey;
+      else if (typeof p.s3.secretAccessKey === 'string' && p.s3.secretAccessKey) s3.secretAccessKey = p.s3.secretAccessKey;
+      st.s3 = s3;
+    }
+    next.storage = st;
   }
   if (patch.emulation && typeof patch.emulation === 'object') {
     next.emulation = normalizeEmulation({ ...cfg.emulation, ...patch.emulation });

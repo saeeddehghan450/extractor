@@ -1,5 +1,110 @@
 # 📝 CHANGELOG
 
+## 3.0.0 — Next.js dashboard on a NestJS server
+
+### Changed
+- Backend rewritten on **NestJS 12** (Express platform): one module per area — config and sessions,
+  live events (SSE), the `/ws/live` WebSocket gateway (Nest `WsAdapter`, one message per client at a
+  time), scraper, knowledge graph, storage, MCP + tool gateway and the agent. Security runs as the first
+  middleware (Host / Origin / JSON checks, 1 MB JSON bodies), `EXTRACTOR_API_TOKEN` is a guard on `/mcp`
+  and `/v1`, and an exception filter returns every error as `{"error": "..."}`. Every endpoint keeps its
+  path, status codes and JSON shape.
+- Dashboard rewritten in **Next.js 16 + React 19** (App Router, client components, TypeScript). It is
+  built as a static export (`web/out`) and served by the NestJS server on the same origin, so there is
+  still one process and one port. Same pages, design, Persian / English and dark / light themes.
+- `npm run dev` (server with reload) and `npm run dev:web` (Next.js dev server proxying the API);
+  `node dist/server/main.js` replaces `dist/server/server.js`. Node.js 20.19+ is required.
+- Saved session pages are now `/sessions/?id=<id>` instead of `#/sessions/<id>`.
+
+### Removed
+- The framework-less dashboard (`web/src`, `public/`) and the hand-written HTTP router.
+
+## 2.7.0 — Long-term storage: PostgreSQL + SeaweedFS
+
+### Added
+- Session archive: every file of a finished session goes to SeaweedFS (S3 gateway, official AWS SDK;
+  unchanged files are skipped) and the structured data to PostgreSQL (`pg` client, `extractor` schema:
+  sessions, requests with headers, console messages, cookies, security headers, scrapes, scraped records as
+  `jsonb`, file index). Archiving is idempotent; sessions are archived automatically when they finish.
+- Restore archived sessions into the output folder; remove the local copy once every file is verified in
+  SeaweedFS (the dashboard then serves files straight from SeaweedFS).
+- Read-only SQL over the archive: one `SELECT` / `WITH` / `EXPLAIN` statement, read-only transaction, a
+  role that can only read the `extractor` schema, file / dynamic-SQL / settings functions refused.
+- AI / MCP tools `extractor_storage_status`, `extractor_sql_query`, `extractor_archive_session`,
+  `extractor_list_archived`, `extractor_restore_session` (32 tools in total); the agent's instructions
+  explain when to use them.
+- Dashboard *Data storage* page (connections, archived sessions with restore / remove local copy, SQL console,
+  hand-off to the assistant) and an *Archive* button on session pages.
+- `/api/storage/*` endpoints; `postgres:18.6` and `chrislusf/seaweedfs:4.48` services in `docker-compose.yml`;
+  storage tests (run with `STORAGE_TEST_DATABASE_URL` / `STORAGE_TEST_S3_ENDPOINT`).
+
+### Security
+- The PostgreSQL URL is masked and S3 secrets are never returned by `/api/config` or `/api/storage/status`.
+
+## 2.6.0 — Neo4j knowledge graph
+
+### Added
+- Neo4j integration (official `neo4j-driver`, official `neo4j` Docker image): sessions are written into a
+  knowledge graph — sessions, pages, domains (with registrable site), requests, scripts, stylesheets,
+  cookies, console messages, security headers, clicked elements, scrapes and scraped records. Shared
+  entities are merged across sessions; syncing a session again replaces its data.
+- Auto-sync when a session finishes and after each saved scrape; *Sync all sessions* for older ones.
+- AI / MCP tools `extractor_graph_schema`, `extractor_graph_query` (read-only Cypher),
+  `extractor_graph_insight` (11 ready-made analyses) and `extractor_graph_sync` (27 tools in total);
+  the agent's instructions explain when to use the graph.
+- Dashboard *Knowledge graph* page: connection setup, node counts, read-only Cypher console with table and
+  interactive graph views, ready-made insights, *Ask the assistant* / *Analyse with AI* hand-off to the
+  assistant. Session pages get *Analyse with AI* and *Send to graph*.
+- `/api/graph/*` endpoints, `neo4j` service in `docker-compose.yml`, Neo4j tests (run with `NEO4J_TEST_URI`).
+
+### Security
+- Graph queries run in read transactions; `LOAD CSV`, admin procedures and batched writes are refused.
+- The Neo4j password is never returned by `/api/config` or `/api/graph/status`.
+
+## 2.5.0 — Interactive scraper and WebSocket live view
+
+- Markdown output: every scrape is also saved as `.md` (title, source URL, row / page count and a table);
+  *MD* download in the scraper page; `output: "markdown"` on `extractor_scrape` / `extractor_run_recipe`.
+
+### Added
+- Interactive scraper page: open a site, pick elements on the live view (hover highlight, click to add a
+  column), automatic detection of repeating lists with item-relative field selectors, editable columns
+  (text, link, image/source, attribute, HTML, form value), pagination through a picked "next" element,
+  preview, extraction of all pages to CSV (UTF-8 BOM) + JSON, saved recipes.
+- WebSocket live view `/ws/live`: CDP screencast frames (sent only on repaint, slow clients skip frames),
+  mouse / wheel / keyboard input, element picking and highlight boxes; Host and Origin checks on upgrade.
+- MCP tools `extractor_scrape`, `extractor_list_recipes`, `extractor_run_recipe` (23 tools in total).
+- Scraper HTTP API (`/api/scraper/*`) and tests for picking, lists, pagination, CSV, recipes, the API and
+  the WebSocket protocol.
+
+### Changed
+- The live session page shows the browser through the WebSocket view instead of polling screenshots.
+
+## 2.4.0 — MCP server and AI models
+
+### Added
+- MCP server (official `@modelcontextprotocol/sdk`) with 20 `extractor_*` tools: session control, page control
+  through accessibility snapshots with element refs (like Playwright MCP), and access to every collector of
+  running and saved sessions (overview, requests, bodies, console, raw collector data, search, exports).
+  Transports: stdio (`npm run mcp`, `dist/mcp/main.js`) and Streamable HTTP (`/mcp` on the dashboard, or
+  `npm run mcp -- --port N`). Tool annotations (read-only / destructive) and an `audit-website` prompt.
+- Tool gateway for apps without MCP: `/v1/tools` in OpenAI function-calling format (default) or Anthropic
+  format, `/v1/tools/call` executing the tool calls a model returned (results shaped as the messages to
+  append), `/v1/tools/{name}` for plain calls.
+- Built-in agent: OpenAI-compatible provider by default (OpenAI, Ollama, vLLM, LM Studio, OpenRouter, …) and
+  Anthropic (`@anthropic-ai/sdk`, Claude Opus 5.5 by default). CLI `npm run agent` and a dashboard
+  *AI assistant* page (chat with live tool calls, model settings, MCP connection snippets).
+- Security for the machine endpoints: Host-header check against DNS rebinding (`EXTRACTOR_ALLOWED_HOSTS`),
+  optional bearer token (`EXTRACTOR_API_TOKEN`).
+- Tests: MCP in-memory / HTTP / stdio, gateway formats, host check and token, agent with mock OpenAI and
+  Anthropic servers, NDJSON agent API.
+
+### Changed
+- One session controller shared by the dashboard, MCP, gateway and agent — sessions started by a model
+  show up live in the dashboard.
+- Logs go to stderr in MCP stdio mode; the MCP entry point switches to the project root so config and
+  output land in the project whatever directory the client starts it from.
+
 ## 2.3.0 — Emulation, HAR, HTML report and search
 
 ### Added

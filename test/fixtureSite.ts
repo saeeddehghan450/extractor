@@ -38,8 +38,31 @@ const HTML = `<!doctype html>
 </body>
 </html>`;
 
+const PRODUCTS: Record<number, { name: string; price: string }[]> = {
+  1: [{ name: 'Phone A', price: '$100' }, { name: 'Phone B', price: '$200' }, { name: 'Phone C, "Pro"', price: '$300' }],
+  2: [{ name: 'Phone D', price: '$400' }, { name: 'Phone E', price: '$500' }, { name: 'گوشی F', price: '$600' }]
+};
+
+function productsPage(page: number): string {
+  const items = (PRODUCTS[page] || []).map((p, i) => `
+    <li class="product card">
+      <a class="title" href="/p/${page}-${i}">${p.name}</a>
+      <span class="price">${p.price}</span>
+      <img src="/img/${page}-${i}.png" alt="${p.name}" width="40" height="40">
+    </li>`).join('');
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Products ${page}</title>
+    <style>li.product { padding: 12px; margin: 6px; border: 1px solid #ccc; list-style: none; }</style></head>
+    <body><h1>Products</h1><ul id="list">${items}</ul>
+    ${page < 2 ? `<a class="next" href="/products?page=${page + 1}">Next</a>` : ''}</body></html>`;
+}
+
 export async function startFixtureServer(): Promise<{ url: string; close: () => Promise<void> }> {
   const server = http.createServer((req, res) => {
+    if (req.url?.startsWith('/products')) {
+      const page = Number(new URL(req.url, 'http://x').searchParams.get('page') || 1);
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      return res.end(productsPage(page));
+    }
     switch (req.url) {
       case '/':
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'X-Frame-Options': 'DENY', 'Set-Cookie': 'sid=abc; HttpOnly' });
