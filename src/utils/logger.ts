@@ -39,6 +39,12 @@ export function onLog(listener: LogListener): () => void {
 
 const showDebug = process.env.DEBUG === '1' || process.env.DEBUG === 'true';
 
+/** In MCP stdio mode stdout carries the protocol, so every log line must go to stderr. */
+let toStderr = false;
+export function logToStderr(): void {
+  toStderr = true;
+}
+
 const COLORS: Record<LogLevel, string> = {
   [LogLevel.INFO]: 'blue',
   [LogLevel.WARN]: 'yellow',
@@ -59,7 +65,7 @@ export function log(level: LogLevel, message: string) {
 
   const prefix = `[${timestamp}] [${level}]`;
   const colored = chalk ? chalk[COLORS[level]](prefix) : prefix;
-  const out = level === LogLevel.ERROR ? console.error : level === LogLevel.WARN ? console.warn : console.log;
+  const out = toStderr || level === LogLevel.ERROR ? console.error : level === LogLevel.WARN ? console.warn : console.log;
   out(colored + ' ' + message);
 }
 

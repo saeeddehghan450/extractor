@@ -16,6 +16,9 @@ Built with TypeScript, Playwright and the Chrome DevTools Protocol (CDP).
 >
 > یا با داکر: `docker compose up -d --build` و سپس باز کردن `http://localhost:4000`
 >
+> برای اتصال مدل‌های هوش مصنوعی: آدرس MCP یعنی `http://localhost:4000/mcp` را در هر کلاینت MCP (Claude، Cursor،
+> VS Code، Codex …) وارد کنید، یا از صفحه «دستیار هوش مصنوعی» با هر مدل سازگار با OpenAI (پیش‌فرض) یا Anthropic گفتگو کنید.
+>
 > در داشبورد آدرس سایت را وارد کنید و «شروع استخراج» را بزنید. با هر کلیک روی صفحه یک اسنپ‌شات کامل
 > گرفته می‌شود. در پایان «پایان و ذخیره» را بزنید؛ همه نتایج در پوشه `output/` ذخیره می‌شوند و از بخش
 > «نتایج ذخیره‌شده» قابل مشاهده‌اند. رابط کاربری فارسی/انگلیسی و تم تیره/روشن دارد.
@@ -104,6 +107,161 @@ The options are remembered in `config.json` (`emulation`) for the next session.
 headers, post data, response bodies, console messages, cookies, local/session storage and the
 downloaded JS/CSS sources. Plain text or regex, optionally case-sensitive; useful for finding
 API keys, tokens or where a value comes from.
+
+## MCP server & AI models
+
+The extractor is also an **MCP server** (Model Context Protocol), so any MCP client or model can drive the
+browser and read the results — the same idea as [Playwright MCP](https://github.com/microsoft/playwright-mcp),
+with the full DevTools data on top. Apps that call a model API directly can use the same tools through an
+**OpenAI-compatible** (default) or **Anthropic** tool API, and a **built-in agent** connects any model for you.
+
+```
+MCP clients (Claude, Cursor, VS Code, Codex…)  ── stdio  or  http://localhost:4000/mcp ─┐
+Apps using OpenAI-compatible APIs               ── /v1/tools  (+ /v1/tools/call)         ├─ 20 extractor_* tools ─ one shared session ─ Chromium
+Apps using the Anthropic API                    ── /v1/tools?format=anthropic            │
+Built-in agent (dashboard page / npm run agent) ─────────────────────────────────────────┘
+```
+
+### Connect an MCP client
+
+**Streamable HTTP** — while the dashboard runs (`npm start` or Docker), the MCP endpoint is
+`http://localhost:4000/mcp`. Standard config:
+
+```json
+{
+  "mcpServers": {
+    "devtools-extractor": { "url": "http://localhost:4000/mcp" }
+  }
+}
+```
+
+**stdio** — the client starts the server itself (run `npm run build` once):
+
+```json
+{
+  "mcpServers": {
+    "devtools-extractor": {
+      "command": "node",
+      "args": ["/path/to/extractor/dist/mcp/main.js"]
+    }
+  }
+}
+```
+
+| Client | How |
+|--------|-----|
+| Claude Code | `claude mcp add --transport http devtools-extractor http://localhost:4000/mcp` |
+| Claude Desktop, Cursor, Windsurf, Cline, LM Studio | standard config above (HTTP or stdio) |
+| VS Code (`.vscode/mcp.json`) | `{"servers": {"devtools-extractor": {"type": "http", "url": "http://localhost:4000/mcp"}}}` |
+| Codex (`~/.codex/config.toml`) | `[mcp_servers.devtools-extractor]` + `url = "http://localhost:4000/mcp"` (or `command`/`args` for stdio) |
+| Docker (stdio) | `"command": "docker", "args": ["run", "-i", "--rm", "--init", "--shm-size=1g", "-v", "extractor-data:/data", "devtools-extractor", "node", "dist/mcp/main.js"]` |
+
+A standalone MCP server without the dashboard: `npm run mcp` (stdio) or `npm run mcp -- --port 8931`
+(HTTP at `http://127.0.0.1:8931/mcp`). The dashboard's *AI assistant → MCP & API connection* page shows
+ready-to-copy configs for your address. The server also offers an `audit-website` prompt.
+
+Hosted model APIs can use the MCP endpoint directly when it is reachable from the internet (put it behind
+HTTPS and set `EXTRACTOR_API_TOKEN`): the OpenAI Responses API through a `{"type": "mcp", "server_url": …}`
+tool, and the Claude API through its MCP connector (`mcp_servers` + an `mcp_toolset` tool, beta
+`mcp-client-2025-11-20`).
+
+### Tools
+
+| Tool | Title | Parameters | Read-only |
+|------|-------|------------|:---------:|
+| `extractor_start_session` | Start extraction session | `url`, `device`, `network`, `preset`, `collectors`, `userAgent`, `extraHeaders`, `blockPatterns`, `headless` |  |
+| `extractor_stop_session` | Stop and save session | — |  |
+| `extractor_session_status` | Session status | `sessionId` | ✓ |
+| `extractor_take_snapshot` | Take snapshot | — |  |
+| `extractor_navigate` | Navigate | `url`, `action` |  |
+| `extractor_page_snapshot` | Page snapshot (accessibility tree) | `maxChars` | ✓ |
+| `extractor_click` | Click | `ref`, `selector`, `role`, `name`, `text`, `element`, `doubleClick` |  |
+| `extractor_type` | Type text | `ref`, `selector`, `role`, `name`, `text`, `element`, `value`, `submit`, `slowly` |  |
+| `extractor_press_key` | Press key | `key` |  |
+| `extractor_scroll` | Scroll | `deltaY` |  |
+| `extractor_screenshot` | Screenshot | `fullPage` | ✓ |
+| `extractor_evaluate` | Run JavaScript in the page | `function` |  |
+| `extractor_list_sessions` | List saved sessions | `limit` | ✓ |
+| `extractor_get_overview` | Findings overview | `sessionId` | ✓ |
+| `extractor_list_requests` | List network requests | `sessionId`, `urlContains`, `resourceType`, `method`, `status`, `limit`, `offset` | ✓ |
+| `extractor_get_request` | Request details | `sessionId`, `requestId`, `includeBody`, `maxBodyChars` | ✓ |
+| `extractor_console_messages` | Console messages | `sessionId`, `level`, `contains`, `limit` | ✓ |
+| `extractor_get_collector_data` | Collector data | `sessionId`, `collector`, `path`, `maxChars` | ✓ |
+| `extractor_search` | Search session | `sessionId`, `query`, `regex`, `caseSensitive`, `limit` | ✓ |
+| `extractor_export` | Export | `sessionId`, `format`, `language` |  |
+
+Like Playwright MCP, the page is read through an accessibility snapshot with element refs
+(`extractor_page_snapshot` → `button "Buy now" [ref=e5]` → `extractor_click {"ref": "e5"}`), which works
+without a vision model. Every click is recorded with a full DevTools snapshot. Data tools work on the running
+session or on any saved session (`sessionId`). Arguments are validated; mistakes come back as tool errors
+the model can read and fix.
+
+### Tool API for OpenAI-compatible and Anthropic apps
+
+For code that calls a model directly instead of through MCP (served by the dashboard server):
+
+```bash
+# 1) tool definitions in OpenAI function-calling format (default) …
+curl http://localhost:4000/v1/tools
+# … or in Anthropic format
+curl "http://localhost:4000/v1/tools?format=anthropic"
+
+# 2) give them to the model; when it answers with tool calls, post them back unchanged:
+#    OpenAI:    {"tool_calls": [...]}       (or the whole assistant message / one tool call)
+#    Anthropic: {"content": [... tool_use blocks ...]}  (or one tool_use block)
+curl -X POST http://localhost:4000/v1/tools/call -H 'Content-Type: application/json' \
+  -d '{"tool_calls":[{"id":"call_1","type":"function","function":{"name":"extractor_list_sessions","arguments":"{}"}}]}'
+# -> OpenAI:    {"messages": [{"role": "tool", "tool_call_id": "call_1", "content": "…"}]}   (append them)
+# -> Anthropic: {"message": {"role": "user", "content": [{"type": "tool_result", …}]}}  (append it)
+
+# one tool with plain JSON arguments
+curl -X POST http://localhost:4000/v1/tools/extractor_get_overview -H 'Content-Type: application/json' -d '{}'
+```
+
+Screenshots: Anthropic tool results carry the image; for OpenAI (whose tool messages are text-only) an extra
+user message with the image follows the tool messages.
+
+### Built-in agent (any model)
+
+The dashboard's **AI assistant** page and `npm run agent` let a model drive the extractor directly. The
+default provider is **OpenAI-compatible** — OpenAI, Azure OpenAI, OpenRouter, Groq, DeepSeek, Together, or
+local servers such as Ollama, vLLM, LM Studio and llama.cpp; `--provider anthropic` uses the Claude API.
+
+```bash
+# OpenAI
+OPENAI_API_KEY=sk-… npm run agent -- --model <model> "Audit https://example.com"
+# Ollama / LM Studio / vLLM (no key needed)
+npm run agent -- --base-url http://localhost:11434/v1 --model <model> "Check https://example.com for console errors"
+# Anthropic (default model claude-opus-5-5)
+ANTHROPIC_API_KEY=… npm run agent -- --provider anthropic "Find API keys in the last session"
+# interactive chat
+npm run agent -- --model <model>
+```
+
+| Setting | CLI | Environment | `config.json` → `ai` |
+|---------|-----|-------------|----------------------|
+| Provider | `--provider openai\|anthropic` | `EXTRACTOR_AI_PROVIDER` | `provider` |
+| Model | `--model` | `EXTRACTOR_AI_MODEL`, `OPENAI_MODEL`, `ANTHROPIC_MODEL` | `model` |
+| Endpoint | `--base-url` | `EXTRACTOR_AI_BASE_URL`, `OPENAI_BASE_URL`, `ANTHROPIC_BASE_URL` | `baseURL` |
+| API key | — | `EXTRACTOR_AI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` | — (never stored) |
+| Steps per message | `--max-steps` (30) | `EXTRACTOR_AI_MAX_STEPS` | `maxSteps` |
+| Effort (Anthropic) | `--effort` | `EXTRACTOR_AI_EFFORT` | `effort` |
+| Screenshots to the model | `--no-vision` | `EXTRACTOR_AI_VISION=0` | `vision` |
+
+With Anthropic on the Claude API, Claude 5-family models run with `effort: high` (tool-heavy work) and the
+server-side refusal fallback (`fallbacks: "default"`) is enabled; turn it off with `--no-fallbacks`. In the
+dashboard the API key can also be entered on the page (kept in the browser only if you choose to).
+
+### Security
+
+The extractor drives a real browser and reads everything it records, so treat access to it as access to
+that data:
+
+- The server answers only for `localhost` host names (DNS-rebinding protection). Allow other names with
+  `EXTRACTOR_ALLOWED_HOSTS=host1,host2` (`*` disables the check).
+- `EXTRACTOR_API_TOKEN=<secret>` requires `Authorization: Bearer <secret>` on `/mcp` and `/v1/*`.
+- Cross-origin browser requests are rejected; the Docker port is published on `127.0.0.1` only.
+- `extractor_evaluate` runs JavaScript in the inspected page (it is marked destructive for MCP clients).
 
 ## Dashboard
 
@@ -216,6 +374,9 @@ Environment variables:
 | `EXTRACTOR_OUTPUT` | Output folder (default `output`) |
 | `EXTRACTOR_HEADLESS=1` | Force headless mode (set in the Docker image) |
 | `DEBUG=1` | Print debug logs |
+| `EXTRACTOR_API_TOKEN` | Bearer token required on `/mcp` and `/v1/*` |
+| `EXTRACTOR_ALLOWED_HOSTS` | Extra host names the server answers for (DNS-rebinding protection) |
+| `EXTRACTOR_AI_*`, `OPENAI_*`, `ANTHROPIC_*` | Agent settings, see *Built-in agent* |
 
 The dashboard listens on `127.0.0.1` only; it can drive a browser and read the output folder,
 so do not expose it on a public interface.
@@ -246,7 +407,15 @@ src/
 │   ├── search.ts           # full-text search inside a session
 │   └── pageScript.ts       # injected script: click tracking, canvas context tracking
 ├── collectors/             # one module per collector + registry.ts
-├── server/server.ts        # dashboard HTTP API + live events (SSE), no extra dependencies
+├── server/
+│   ├── server.ts           # dashboard HTTP API + live events (SSE)
+│   └── aiRoutes.ts         # /mcp, /v1/tools gateway, /api/agent
+├── mcp/                    # MCP server (stdio + Streamable HTTP)
+├── ai/
+│   ├── tools.ts            # the 20 tools (zod schemas), shared by MCP, gateway and agent
+│   ├── gateway.ts          # OpenAI / Anthropic tool formats
+│   ├── agent.ts            # agent loop: OpenAI-compatible + Anthropic
+│   └── cli.ts              # npm run agent
 ├── utils/                  # config, presets, CDP helpers, files, logger
 ├── bin/collector-cli.ts    # collectors CLI
 └── main.ts                 # command-line extraction

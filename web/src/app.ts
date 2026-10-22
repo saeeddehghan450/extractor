@@ -8,8 +8,9 @@ import * as live from './views/live.js';
 import * as collectors from './views/collectors.js';
 import * as sessions from './views/sessions.js';
 import * as settings from './views/settings.js';
+import * as assistant from './views/assistant.js';
 
-const routes: Record<string, { mount: MountFn }> = { live, collectors, sessions, settings };
+const routes: Record<string, { mount: MountFn }> = { live, collectors, sessions, settings, assistant };
 let unmount: Unmount | null = null;
 let currentRoute = '';
 

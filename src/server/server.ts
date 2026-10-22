@@ -11,6 +11,8 @@ import path from 'path';
 import { URL } from 'url';
 import { COLLECTORS } from '../collectors/registry';
 import { ExtractorSession, packageVersion } from '../core/session';
+import { ControllerError, controller } from '../core/controller';
+import { RouteError, handleAiRoute } from './aiRoutes';
 import { DEVICE_PRESETS, NETWORK_PRESETS } from '../core/emulation';
 import { buildHar } from '../core/har';
 import { ReportLang, renderReport } from '../core/report';
@@ -56,7 +58,6 @@ class HttpError extends Error {
 // live session + SSE clients
 // ---------------------------------------------------------------------------
 
-let current: ExtractorSession | null = null;
 const clients = new Set<http.ServerResponse>();
 
 function broadcast(type: string, data: unknown) {
@@ -158,14 +159,32 @@ function sendFile(res: http.ServerResponse, file: string, download = false) {
 }
 
 function requireSession(): ExtractorSession {
-  if (!current || !current.isActive) throw new HttpError(409, 'No running session');
-  return current;
+  return controller.require();
 }
+
+// every session - started from the dashboard, MCP, the gateway or the agent - is shown live
+controller.on('session', (s: ExtractorSession) => wireSession(s));
 
 /**
  * Basic protection for a localhost service: state-changing requests must be JSON
  * (forces a CORS preflight for cross-site pages) and must not come from another origin.
  */
+const LOCAL_HOSTS = ['localhost', '127.0.0.1', '[::1]', '::1'];
+
+/**
+ * DNS-rebinding protection: only answer requests addressed to localhost or to a host listed in
+ * EXTRACTOR_ALLOWED_HOSTS (comma separated, "*" disables the check).
+ */
+function checkHost(req: http.IncomingMessage) {
+  const allowed = (process.env.EXTRACTOR_ALLOWED_HOSTS || '').split(',').map(h => h.trim().toLowerCase()).filter(Boolean);
+  if (allowed.includes('*')) return;
+  const host = (req.headers.host || '').toLowerCase();
+  const hostname = host.startsWith('[') ? host.slice(0, host.indexOf(']') + 1) : host.split(':')[0];
+  if (!LOCAL_HOSTS.includes(hostname) && !allowed.includes(hostname) && !allowed.includes(host)) {
+    throw new HttpError(403, `Host "${host}" is not allowed (set EXTRACTOR_ALLOWED_HOSTS to allow it)`);
+  }
+}
+
 function checkOrigin(req: http.IncomingMessage) {
   const origin = req.headers.origin;
   if (origin) {
@@ -185,6 +204,7 @@ function checkOrigin(req: http.IncomingMessage) {
 
 async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, url: URL) {
   checkOrigin(req);
+  const current = controller.current;
   const method = req.method || 'GET';
   const parts = url.pathname.replace(/^\/api\/?/, '').split('/').filter(Boolean).map(decodeURIComponent);
   const route = `${method} /${parts.join('/')}`;
@@ -245,33 +265,13 @@ async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, ur
   }
 
   if (route === 'POST /session/start') {
-    if (current?.isActive) throw new HttpError(409, 'A session is already running');
     const body = await readBody(req);
-    const cfg = loadConfig();
-    const collectors = { ...getCollectorFlags(), ...(body.collectors || {}) };
-    let session: ExtractorSession;
-    try {
-      session = new ExtractorSession({
-        url: String(body.url || cfg.targetUrl),
-        headless: isHeadlessForced() || (typeof body.headless === 'boolean' ? body.headless : cfg.headless),
-        slowMo: cfg.slowMo,
-        executablePath: cfg.executablePath,
-        viewport: cfg.viewport,
-        performanceTraceMs: cfg.performanceTraceMs,
-        collectors,
-        outputRoot: OUTPUT_DIR,
-        emulation: { ...cfg.emulation, ...(body.emulation && typeof body.emulation === 'object' ? body.emulation : {}) }
-      });
-    } catch (e) {
-      throw new HttpError(400, (e as Error).message);
-    }
-    current = session;
-    wireSession(session);
-    try {
-      await session.start();
-    } catch (e) {
-      throw new HttpError(500, `Browser failed to start: ${(e as Error).message.split('\n')[0]}`);
-    }
+    const session = await controller.start({
+      url: body.url,
+      headless: body.headless,
+      collectors: body.collectors,
+      emulation: body.emulation
+    });
     return sendJSON(res, 200, session.summary());
   }
 
@@ -381,7 +381,7 @@ function handleEvents(req: http.IncomingMessage, res: http.ServerResponse) {
     'Cache-Control': 'no-store',
     Connection: 'keep-alive'
   });
-  res.write(`event: hello\ndata: ${JSON.stringify({ session: current ? current.summary() : null })}\n\n`);
+  res.write(`event: hello\ndata: ${JSON.stringify({ session: controller.current ? controller.current.summary() : null })}\n\n`);
   clients.add(res);
   const ping = setInterval(() => res.write(': ping\n\n'), 20000);
   req.on('close', () => {
@@ -404,12 +404,17 @@ export function createServer(): http.Server {
   return http.createServer(async (req, res) => {
     const url = new URL(req.url || '/', 'http://localhost');
     try {
+      checkHost(req);
+      if (url.pathname === '/mcp' || url.pathname.startsWith('/v1/') || url.pathname.startsWith('/api/agent/')) {
+        checkOrigin(req);
+        if (await handleAiRoute(req, res, url, readBody)) return;
+      }
       if (url.pathname === '/api/events') return handleEvents(req, res);
       if (url.pathname.startsWith('/api/')) return await handleApi(req, res, url);
       if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'Method not allowed');
       return handleStatic(res, url.pathname);
     } catch (e) {
-      const status = e instanceof HttpError ? e.status : 500;
+      const status = e instanceof HttpError || e instanceof ControllerError || e instanceof RouteError ? e.status : 500;
       const message = (e as Error).message.split('\n')[0];
       if (status >= 500) error(`${req.method} ${url.pathname}: ${message}`);
       if (!res.headersSent) sendJSON(res, status, { error: message });
@@ -419,7 +424,7 @@ export function createServer(): http.Server {
 }
 
 export async function stopCurrentSession(): Promise<void> {
-  if (current?.isActive) await current.stop();
+  await controller.stopIfActive();
 }
 
 if (require.main === module) {

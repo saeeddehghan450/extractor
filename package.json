@@ -1,7 +1,7 @@
 {
   "name": "ultimate-devtools-extractor",
-  "version": "2.3.0",
-  "description": "Ultimate DevTools Extractor - TypeScript + Playwright + CDP, with a web dashboard",
+  "version": "2.4.0",
+  "description": "Ultimate DevTools Extractor - TypeScript + Playwright + CDP, with a web dashboard, an MCP server and an LLM agent",
   "main": "dist/server/server.js",
   "scripts": {
     "start": "npm run build:web && tsx src/server/server.ts",
@@ -9,9 +9,12 @@
     "dev:web": "tsc -p web --watch",
     "extract": "tsx src/main.ts",
     "collectors": "tsx src/bin/collector-cli.ts",
+    "mcp": "tsx src/mcp/main.ts",
+    "agent": "tsx src/ai/cli.ts",
     "build": "tsc && npm run build:web",
     "build:web": "tsc -p web",
     "start:prod": "node dist/server/server.js",
+    "start:mcp": "node dist/mcp/main.js",
     "typecheck": "tsc --noEmit && tsc -p web --noEmit",
     "test": "node --import tsx --test test/*.test.ts",
     "setup": "playwright install chromium",
@@ -23,11 +26,19 @@
     "node": ">=20"
   },
   "dependencies": {
-    "playwright": "^1.64.1"
+    "@anthropic-ai/sdk": "^1.1.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "openai": "^7.42.0",
+    "playwright": "^1.64.1",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"
+  },
+  "bin": {
+    "devtools-extractor-mcp": "dist/mcp/main.js",
+    "devtools-extractor-agent": "dist/ai/cli.js"
   }
 }

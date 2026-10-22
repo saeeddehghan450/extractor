@@ -55,6 +55,20 @@ docker cp devtools-extractor:/data/output ./output
 docker compose down            # add -v to delete the data volume
 ```
 
+### MCP & AI
+```bash
+npm run mcp                          # MCP server on stdio
+npm run mcp -- --port 8931           # MCP server over HTTP: http://127.0.0.1:8931/mcp
+# (the dashboard also serves MCP at http://localhost:4000/mcp)
+claude mcp add --transport http devtools-extractor http://localhost:4000/mcp
+
+npm run agent -- --model <model> "Audit https://example.com"                       # OpenAI-compatible
+npm run agent -- --base-url http://localhost:11434/v1 --model <model> "…"           # Ollama / local
+npm run agent -- --provider anthropic "…"                                          # Claude
+curl http://localhost:4000/v1/tools                       # tools, OpenAI format
+curl "http://localhost:4000/v1/tools?format=anthropic"    # tools, Anthropic format
+```
+
 ### Development
 ```bash
 npm run setup       # install Chromium for Playwright

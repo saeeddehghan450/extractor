@@ -601,3 +601,38 @@ mark { background: color-mix(in srgb, var(--warn) 35%, transparent); color: inhe
 @media (max-width: 700px) {
   .advanced-grid { grid-template-columns: 1fr; }
 }
+
+/* ---------- AI assistant ---------- */
+.ai-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
+.ai-chat { display: flex; flex-direction: column; padding: 0; overflow: hidden; height: calc(100vh - 210px); min-height: 460px; }
+.ai-messages { flex: 1; overflow: auto; padding: 18px; display: flex; flex-direction: column; gap: 10px; }
+.ai-empty { margin: auto; text-align: center; max-width: 520px; color: var(--text-2); }
+.ai-empty > i[data-icon] { width: 40px; height: 40px; color: var(--accent); }
+.ai-empty h3 { margin: 8px 0 4px; color: var(--text); }
+.ai-empty .chips { justify-content: center; margin-top: 14px; }
+.ai-msg { display: flex; }
+.ai-msg .bubble { max-width: 85%; padding: 10px 14px; border-radius: 14px; line-height: 1.7; word-break: break-word; }
+.ai-msg.user { justify-content: flex-end; }
+.ai-msg.user .bubble { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; border-end-end-radius: 4px; }
+.ai-msg.assistant .bubble { background: var(--surface-2); border: 1px solid var(--border-soft); border-end-start-radius: 4px; unicode-bidi: plaintext; text-align: start; }
+.ai-msg.assistant .bubble code { background: var(--bg-2); padding: 1px 5px; border-radius: 4px; }
+.ai-msg.assistant .bubble pre.code { margin: 8px 0; }
+.ai-msg.status { gap: 8px; align-items: center; color: var(--text-3); font-size: 12.5px; }
+.ai-msg.error { gap: 8px; align-items: center; color: var(--err); background: var(--err-soft); padding: 8px 12px; border-radius: 10px; }
+.ai-tool { border: 1px solid var(--border-soft); border-radius: 10px; background: var(--bg-2); font-size: 12.5px; max-width: 100%; }
+.ai-tool summary { display: flex; gap: 8px; align-items: center; padding: 7px 10px; cursor: pointer; list-style: none; min-width: 0; }
+.ai-tool summary::-webkit-details-marker { display: none; }
+.ai-tool summary code { color: var(--accent-2); flex: none; }
+.ai-tool summary .truncate { flex: 1; min-width: 0; }
+.ai-tool pre.code { margin: 0 10px 10px; max-height: 260px; }
+.ai-tool.ok .ai-tool-state { color: var(--ok); font-weight: 700; }
+.ai-tool.err { border-color: color-mix(in srgb, var(--err) 40%, transparent); }
+.ai-tool.err .ai-tool-state { color: var(--err); font-weight: 700; }
+.ai-input { border-top: 1px solid var(--border-soft); padding: 12px; display: flex; flex-direction: column; gap: 8px; background: var(--surface); }
+.ai-input .textarea { font-family: var(--font); font-size: 14px; min-height: 60px; }
+.ai-settings { position: sticky; top: 90px; }
+@media (max-width: 1100px) {
+  .ai-layout { grid-template-columns: 1fr; }
+  .ai-settings { position: static; order: -1; }
+  .ai-chat { height: 70vh; }
+}

@@ -1,5 +1,30 @@
 # 📝 CHANGELOG
 
+## 2.4.0 — MCP server and AI models
+
+### Added
+- MCP server (official `@modelcontextprotocol/sdk`) with 20 `extractor_*` tools: session control, page control
+  through accessibility snapshots with element refs (like Playwright MCP), and access to every collector of
+  running and saved sessions (overview, requests, bodies, console, raw collector data, search, exports).
+  Transports: stdio (`npm run mcp`, `dist/mcp/main.js`) and Streamable HTTP (`/mcp` on the dashboard, or
+  `npm run mcp -- --port N`). Tool annotations (read-only / destructive) and an `audit-website` prompt.
+- Tool gateway for apps without MCP: `/v1/tools` in OpenAI function-calling format (default) or Anthropic
+  format, `/v1/tools/call` executing the tool calls a model returned (results shaped as the messages to
+  append), `/v1/tools/{name}` for plain calls.
+- Built-in agent: OpenAI-compatible provider by default (OpenAI, Ollama, vLLM, LM Studio, OpenRouter, …) and
+  Anthropic (`@anthropic-ai/sdk`, Claude Opus 5.5 by default). CLI `npm run agent` and a dashboard
+  *AI assistant* page (chat with live tool calls, model settings, MCP connection snippets).
+- Security for the machine endpoints: Host-header check against DNS rebinding (`EXTRACTOR_ALLOWED_HOSTS`),
+  optional bearer token (`EXTRACTOR_API_TOKEN`).
+- Tests: MCP in-memory / HTTP / stdio, gateway formats, host check and token, agent with mock OpenAI and
+  Anthropic servers, NDJSON agent API.
+
+### Changed
+- One session controller shared by the dashboard, MCP, gateway and agent — sessions started by a model
+  show up live in the dashboard.
+- Logs go to stderr in MCP stdio mode; the MCP entry point switches to the project root so config and
+  output land in the project whatever directory the client starts it from.
+
 ## 2.3.0 — Emulation, HAR, HTML report and search
 
 ### Added

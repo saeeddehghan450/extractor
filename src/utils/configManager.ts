@@ -27,6 +27,16 @@ export interface Config {
   port: number;
   /** Default device / network emulation, custom UA / headers and blocked URLs. */
   emulation: EmulationOptions;
+  /** Optional defaults for the built-in agent (API keys belong in environment variables). */
+  ai?: {
+    provider?: 'openai' | 'anthropic';
+    model?: string;
+    baseURL?: string;
+    maxSteps?: number;
+    effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+    vision?: boolean;
+    fallbacks?: boolean;
+  };
   collectors: Record<string, CollectorConfig>;
 }
 
