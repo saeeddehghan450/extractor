@@ -2,22 +2,23 @@ import { api } from './api.js';
 import { hydrateIcons, icon } from './icons.js';
 import { getLang, setLang, t, translateDom } from './i18n.js';
 import { state, on, connectEvents, loadLive } from './store.js';
-import { $, $$, closeDrawer, statusPill, toast } from './util.js';
+import { $, $$, closeDrawer, errMsg, statusPill, toast } from './util.js';
+import type { MountFn, Unmount } from './types.js';
 import * as live from './views/live.js';
 import * as collectors from './views/collectors.js';
 import * as sessions from './views/sessions.js';
 import * as settings from './views/settings.js';
 
-const routes = { live, collectors, sessions, settings };
-let unmount = null;
+const routes: Record<string, { mount: MountFn }> = { live, collectors, sessions, settings };
+let unmount: Unmount | null = null;
 let currentRoute = '';
 
-function parseHash() {
+function parseHash(): { name: string; params: string[] } {
   const [name, ...rest] = location.hash.replace(/^#\/?/, '').split('/');
   return { name: routes[name] ? name : 'live', params: rest.map(decodeURIComponent) };
 }
 
-export function setHeader(title, subtitle = '') {
+export function setHeader(title: string, subtitle = ''): void {
   $('#pageTitle').textContent = title;
   $('#pageSubtitle').textContent = subtitle;
   document.title = `${title} · DevTools Extractor`;
@@ -29,10 +30,10 @@ function render() {
   if (unmount) { try { unmount(); } catch (e) { console.error(e); } }
   closeDrawer();
   $('#sidebar').classList.remove('open');
-  $$('#nav a').forEach(a => a.classList.toggle('active', a.dataset.route === name));
+  $$<HTMLAnchorElement>('#nav a').forEach(a => a.classList.toggle('active', a.dataset.route === name));
   // fresh element per route so listeners of the previous view never leak
   const old = $('#view');
-  const view = old.cloneNode(false);
+  const view = old.cloneNode(false) as HTMLElement;
   old.replaceWith(view);
   const res = routes[name].mount(view, params, { setHeader });
   unmount = typeof res === 'function' ? res : null;
@@ -62,11 +63,10 @@ function renderConn() {
   $('#connText').textContent = t(state.connected ? 'conn.on' : 'conn.off');
 }
 
-function applyTheme(theme) {
+function applyTheme(theme: 'light' | 'dark') {
   document.documentElement.dataset.theme = theme;
-  try { localStorage.setItem('dx-theme', theme); } catch (e) { /* ignore */ }
-  const btn = $('#themeBtn');
-  btn.innerHTML = icon(theme === 'light' ? 'moon' : 'sun');
+  try { localStorage.setItem('dx-theme', theme); } catch { /* storage may be blocked */ }
+  $('#themeBtn').innerHTML = icon(theme === 'light' ? 'moon' : 'sun');
 }
 
 function refreshChrome() {
@@ -78,7 +78,7 @@ function refreshChrome() {
 
 async function init() {
   hydrateIcons();
-  applyTheme(document.documentElement.dataset.theme || 'dark');
+  applyTheme(document.documentElement.dataset.theme === 'light' ? 'light' : 'dark');
   refreshChrome();
 
   $('#themeBtn').onclick = () => applyTheme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light');
@@ -92,7 +92,7 @@ async function init() {
     [state.meta, state.config] = await Promise.all([api.meta(), api.config()]);
     await loadLive();
   } catch (e) {
-    toast(e.message, 'err');
+    toast(errMsg(e), 'err');
   }
 
   connectEvents();

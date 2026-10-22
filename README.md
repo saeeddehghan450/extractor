@@ -188,13 +188,15 @@ so do not expose it on a public interface.
 
 ## Development
 
-Requires Node.js 20+. Development runs TypeScript directly with `tsx`; `npm run build` compiles
-with TypeScript 7.
+Requires Node.js 20+. The whole project is TypeScript: the server runs directly with `tsx` in
+development, and the dashboard (`web/src`) is compiled by `tsc` to `public/js` — `npm start` does
+that automatically. Use `npm run dev:web` to recompile the dashboard on every change.
 
 ```bash
-npm run typecheck    # TypeScript check
+npm run typecheck    # TypeScript check (server + dashboard)
+npm run dev:web      # recompile the dashboard on change (run next to npm start)
 npm test             # end-to-end tests (real headless Chromium against a local fixture site)
-npm run build        # compile to dist/ ; then: npm run start:prod
+npm run build        # server -> dist/, dashboard -> public/js ; then: npm run start:prod
 ```
 
 Project layout:
@@ -210,7 +212,12 @@ src/
 ├── utils/                  # config, presets, CDP helpers, files, logger
 ├── bin/collector-cli.ts    # collectors CLI
 └── main.ts                 # command-line extraction
-public/                     # dashboard (vanilla JS modules + CSS, no build step)
+web/
+├── src/                    # dashboard source (TypeScript, no framework)
+│   ├── app.ts, store.ts, api.ts, types.ts, i18n.ts, ...
+│   └── views/              # live, collectors, sessions, settings
+└── tsconfig.json           # browser build -> public/js
+public/                     # index.html, CSS and the compiled dashboard (public/js is generated)
 test/                       # end-to-end tests and fixture site
 Dockerfile, docker-compose.yml
 ```

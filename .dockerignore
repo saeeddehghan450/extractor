@@ -13,3 +13,4 @@ test
 Dockerfile
 docker-compose.yml
 .dockerignore
+public/js

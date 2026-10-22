@@ -1,5 +1,8 @@
 // Persian / English strings
-const fa = {
+export type Lang = 'fa' | 'en';
+type Dict = Record<string, string>;
+
+const fa: Dict = {
   'brand.tagline': 'تحلیلگر کامل مرورگر',
   'nav.live': 'جلسه زنده',
   'nav.collectors': 'کالکتورها',
@@ -231,7 +234,7 @@ const fa = {
   'common.min': '{n} دقیقه'
 };
 
-const en = {
+const en: Dict = {
   'brand.tagline': 'Complete browser analyzer',
   'nav.live': 'Live session',
   'nav.collectors': 'Collectors',
@@ -463,45 +466,45 @@ const en = {
   'common.min': '{n} min'
 };
 
-const dicts = { fa, en };
-let lang = document.documentElement.lang === 'en' ? 'en' : 'fa';
+const dicts: Record<Lang, Dict> = { fa, en };
+let lang: Lang = document.documentElement.lang === 'en' ? 'en' : 'fa';
 
-export function getLang() {
+export function getLang(): Lang {
   return lang;
 }
 
-export function setLang(next) {
+export function setLang(next: Lang): void {
   lang = next === 'en' ? 'en' : 'fa';
   document.documentElement.lang = lang;
   document.documentElement.dir = lang === 'fa' ? 'rtl' : 'ltr';
   try { localStorage.setItem('dx-lang', lang); } catch (e) { /* ignore */ }
 }
 
-export function t(key, vars) {
+export function t(key: string, vars?: Record<string, string | number>): string {
   let s = dicts[lang][key] ?? dicts.en[key] ?? key;
-  if (vars) for (const [k, v] of Object.entries(vars)) s = s.replace(`{${k}}`, v);
+  if (vars) for (const [k, v] of Object.entries(vars)) s = s.replace(`{${k}}`, String(v));
   return s;
 }
 
 /** Translate static markup: data-i18n (text) and data-i18n-title / -placeholder. */
-export function translateDom(root = document) {
-  root.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
-  root.querySelectorAll('[data-i18n-title]').forEach(el => { el.title = t(el.dataset.i18nTitle); });
-  root.querySelectorAll('[data-i18n-placeholder]').forEach(el => { el.placeholder = t(el.dataset.i18nPlaceholder); });
+export function translateDom(root: ParentNode = document): void {
+  root.querySelectorAll<HTMLElement>('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n || ''); });
+  root.querySelectorAll<HTMLElement>('[data-i18n-title]').forEach(el => { el.title = t(el.dataset.i18nTitle || ''); });
+  root.querySelectorAll<HTMLInputElement>('[data-i18n-placeholder]').forEach(el => { el.placeholder = t(el.dataset.i18nPlaceholder || ''); });
 }
 
-export function fmtNumber(n) {
+export function fmtNumber(n: number | null | undefined): string {
   if (n == null || Number.isNaN(n)) return '—';
   return new Intl.NumberFormat(lang === 'fa' ? 'fa-IR' : 'en-US').format(n);
 }
 
-export function fmtDate(iso) {
+export function fmtDate(iso: string | null | undefined): string {
   if (!iso) return '—';
   const d = new Date(iso);
   return new Intl.DateTimeFormat(lang === 'fa' ? 'fa-IR' : 'en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(d);
 }
 
-export function fmtTime(iso) {
+export function fmtTime(iso: string | null | undefined): string {
   if (!iso) return '';
   return new Date(iso).toLocaleTimeString('en-GB', { hour12: false });
 }

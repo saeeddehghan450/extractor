@@ -1,5 +1,15 @@
 # 📝 CHANGELOG
 
+## 2.2.0 — Dashboard in TypeScript
+
+### Changed
+- The dashboard source moved from `public/js/*.js` to `web/src/*.ts` and is fully typed
+  (strict mode, shared API types in `web/src/types.ts`). It is compiled by `tsc -p web`
+  to `public/js` (with source maps); the output is not committed.
+- The inline theme/language script of `index.html` became `web/src/boot.ts`.
+- `npm start` compiles the dashboard first; new scripts `build:web` and `dev:web`;
+  `build` and `typecheck` cover both server and dashboard. The Docker image builds it too.
+
 ## 2.1.0 — Latest dependencies & Docker
 
 ### Changed

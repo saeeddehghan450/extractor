@@ -9,15 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/app.css">
-  <script>
-    // apply saved theme/lang before first paint
-    try {
-      var t = localStorage.getItem('dx-theme');
-      if (t) document.documentElement.dataset.theme = t;
-      var l = localStorage.getItem('dx-lang');
-      if (l === 'en') { document.documentElement.lang = 'en'; document.documentElement.dir = 'ltr'; }
-    } catch (e) {}
-  </script>
+  <script src="/js/boot.js"></script>
 </head>
 <body>
   <div class="app">

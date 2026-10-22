@@ -2,9 +2,10 @@ import { api } from '../api.js';
 import { icon, COLLECTOR_ICONS } from '../icons.js';
 import { t, fmtNumber } from '../i18n.js';
 import { state } from '../store.js';
-import { $, esc, html, toast } from '../util.js';
+import { errMsg, esc, html, toast } from '../util.js';
+import type { ConfigPatch, ViewContext } from '../types.js';
 
-export function mount(el, _params, { setHeader }) {
+export function mount(el: HTMLElement, _params: string[], { setHeader }: ViewContext): void {
   setHeader(t('collectors.title'), t('collectors.subtitle'));
 
   const render = () => {
@@ -63,35 +64,36 @@ export function mount(el, _params, { setHeader }) {
     `);
   };
 
-  const save = async patch => {
+  const save = async (patch: ConfigPatch) => {
     try {
       state.config = await api.saveConfig(patch);
       render();
       toast(t('collectors.saved'), 'ok', 1500);
     } catch (e) {
-      toast(e.message, 'err');
+      toast(errMsg(e), 'err');
       render();
     }
   };
 
   el.addEventListener('change', e => {
-    const input = e.target.closest('input[data-collector]');
-    if (input) save({ collectors: { [input.dataset.collector]: input.checked } });
+    const input = (e.target as Element).closest<HTMLInputElement>('input[data-collector]');
+    if (input) save({ collectors: { [input.dataset.collector!]: input.checked } });
   });
 
   el.addEventListener('click', async e => {
-    const preset = e.target.closest('[data-preset]');
+    const target = e.target as Element;
+    const preset = target.closest<HTMLElement>('[data-preset]');
     if (preset) {
       try {
-        state.config = await api.applyPreset(preset.dataset.preset);
+        state.config = await api.applyPreset(preset.dataset.preset!);
         render();
         toast(t('collectors.applied', { name: t('preset.' + preset.dataset.preset) }), 'ok');
-      } catch (err) { toast(err.message, 'err'); }
+      } catch (err) { toast(errMsg(err), 'err'); }
       return;
     }
-    if (e.target.closest('#allOn') || e.target.closest('#allOff')) {
-      const value = !!e.target.closest('#allOn');
-      save({ collectors: Object.fromEntries(state.meta.collectors.map(c => [c.name, value])) });
+    if (target.closest('#allOn') || target.closest('#allOff')) {
+      const value = !!target.closest('#allOn');
+      save({ collectors: Object.fromEntries((state.meta?.collectors || []).map(c => [c.name, value])) });
     }
   });
 

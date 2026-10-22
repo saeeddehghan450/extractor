@@ -1,5 +1,5 @@
 // Minimal stroke icon set (Lucide-style paths, MIT)
-const P = {
+const P: Record<string, string> = {
   activity: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
   layers: '<path d="m12 2 10 5-10 5L2 7z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/>',
   archive: '<rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>',
@@ -44,20 +44,20 @@ const P = {
   image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.09-3.09a2 2 0 0 0-2.82 0L6 21"/>'
 };
 
-export function icon(name, cls = '') {
+export function icon(name: string, cls = ''): string {
   const body = P[name] || P.file;
   return `<i data-icon="${name}" class="${cls}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${body}</svg></i>`;
 }
 
 /** Fill every empty <i data-icon> inside root. */
-export function hydrateIcons(root = document) {
-  root.querySelectorAll('i[data-icon]').forEach(el => {
+export function hydrateIcons(root: ParentNode = document): void {
+  root.querySelectorAll<HTMLElement>('i[data-icon]').forEach(el => {
     if (el.firstElementChild) return;
-    el.outerHTML = icon(el.dataset.icon, el.className);
+    el.outerHTML = icon(el.dataset.icon || '', el.className);
   });
 }
 
-export const COLLECTOR_ICONS = {
+export const COLLECTOR_ICONS: Record<string, string> = {
   network: 'network',
   console: 'terminal',
   elements: 'code',

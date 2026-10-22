@@ -1,19 +1,21 @@
 {
   "name": "ultimate-devtools-extractor",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Ultimate DevTools Extractor - TypeScript + Playwright + CDP, with a web dashboard",
   "main": "dist/server/server.js",
   "scripts": {
-    "start": "tsx src/server/server.ts",
-    "dashboard": "tsx src/server/server.ts",
+    "start": "npm run build:web && tsx src/server/server.ts",
+    "dashboard": "npm run build:web && tsx src/server/server.ts",
+    "dev:web": "tsc -p web --watch",
     "extract": "tsx src/main.ts",
     "collectors": "tsx src/bin/collector-cli.ts",
-    "build": "tsc",
+    "build": "tsc && npm run build:web",
+    "build:web": "tsc -p web",
     "start:prod": "node dist/server/server.js",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p web --noEmit",
     "test": "node --import tsx --test test/*.test.ts",
     "setup": "playwright install chromium",
-    "clean": "rm -rf dist output"
+    "clean": "rm -rf dist output public/js"
   },
   "author": "saeed dehghan",
   "license": "MIT",

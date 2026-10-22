@@ -50,6 +50,8 @@ docker compose down            # add -v to delete the data volume
 ```bash
 npm run setup       # install Chromium for Playwright
 npm run typecheck
+npm run build:web   # compile the dashboard (web/src -> public/js)
+npm run dev:web     # recompile the dashboard on every change
 npm test
 npm run clean       # remove dist/ and output/
 ```

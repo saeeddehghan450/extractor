@@ -2,10 +2,11 @@ import { api } from '../api.js';
 import { icon, COLLECTOR_ICONS } from '../icons.js';
 import { t, fmtNumber, fmtDate, fmtTime } from '../i18n.js';
 import { state } from '../store.js';
-import { $, $$, esc, html, toast, openDrawer, fmtBytes, fmtDuration, statusClass, statusPill, hostOf, headersTable, debounce } from '../util.js';
+import { $, $$, esc, errMsg, html, inputValue, toast, openDrawer, fmtBytes, fmtDuration, statusClass, statusPill, hostOf, headersTable, debounce } from '../util.js';
+import type { Analysis, CollectorDefinition, ConsoleLine, NetworkResponse, SessionSummary, ViewContext } from '../types.js';
 import { renderJson, expandAll } from '../jsonView.js';
 
-export function mount(el, params, ctx) {
+export function mount(el: HTMLElement, params: string[], ctx: ViewContext): void {
   if (params[0]) return mountDetail(el, params[0], ctx);
   return mountList(el, ctx);
 }
@@ -14,9 +15,9 @@ export function mount(el, params, ctx) {
 // list
 // ---------------------------------------------------------------------------
 
-function mountList(el, { setHeader }) {
+function mountList(el: HTMLElement, { setHeader }: ViewContext): void {
   setHeader(t('sessions.title'), t('sessions.subtitle'));
-  let all = [];
+  let all: SessionSummary[] = [];
   let filter = '';
 
   const render = () => {
@@ -42,7 +43,7 @@ function mountList(el, { setHeader }) {
                 ${s.headless ? '<span class="pill">headless</span>' : ''}
               </div>
               <div class="url truncate">${esc(s.url)}</div>
-              <div class="muted small">${esc(fmtDate(s.startedAt))}${s.endedAt ? ' · ' + esc(fmtDuration(new Date(s.endedAt) - new Date(s.startedAt))) : ''}</div>
+              <div class="muted small">${esc(fmtDate(s.startedAt))}${s.endedAt ? ' · ' + esc(fmtDuration(Date.parse(s.endedAt) - Date.parse(s.startedAt))) : ''}</div>
             </div>
             <div class="metrics">
               <span title="${esc(t('stat.requests'))}">${icon('network')}${fmtNumber(s.counts?.requests ?? 0)}</span>
@@ -57,25 +58,26 @@ function mountList(el, { setHeader }) {
           </div>`).join('')}
       </div>`);
     const q = $('#q', el);
-    q.oninput = debounce(e => { filter = e.target.value.toLowerCase(); render(); $('#q', el).focus(); }, 200);
+    q.oninput = debounce((e: Event) => { filter = inputValue(e).toLowerCase(); render(); $('#q', el).focus(); }, 200);
   };
 
   el.addEventListener('click', async e => {
-    if (e.target.closest('[data-stop]')) return;
-    const del = e.target.closest('[data-del]');
+    const target = e.target as Element;
+    if (target.closest('[data-stop]')) return;
+    const del = target.closest<HTMLElement>('[data-del]');
     if (del) {
       e.stopPropagation();
       if (!confirm(t('sessions.delete.confirm'))) return;
       try {
-        await api.deleteSession(del.dataset.del);
+        await api.deleteSession(del.dataset.del!);
         all = all.filter(s => s.id !== del.dataset.del);
         toast(t('sessions.deleted'), 'ok');
         render();
-      } catch (err) { toast(err.message, 'err'); }
+      } catch (err) { toast(errMsg(err), 'err'); }
       return;
     }
-    const row = e.target.closest('.session-row');
-    if (row) location.hash = `#/sessions/${encodeURIComponent(row.dataset.id)}`;
+    const row = target.closest<HTMLElement>('.session-row');
+    if (row) location.hash = `#/sessions/${encodeURIComponent(row.dataset.id!)}`;
   });
 
   html(el, `<div class="empty">${esc(t('common.loading'))}</div>`);
@@ -86,10 +88,10 @@ function mountList(el, { setHeader }) {
 // detail
 // ---------------------------------------------------------------------------
 
-function mountDetail(el, id, { setHeader }) {
+function mountDetail(el: HTMLElement, id: string, { setHeader }: ViewContext): void {
   setHeader(t('sessions.title'), id);
-  let summary = null;
-  let analysis = null;
+  let summary!: SessionSummary;
+  let analysis: Analysis | null = null;
   let tab = 'overview';
   const netUi = { filter: '', type: 'all' };
 
@@ -103,14 +105,15 @@ function mountDetail(el, id, { setHeader }) {
       return;
     }
     if (summary.analysisFile) {
-      try { analysis = await api.json(id, 'analysis.json'); } catch (err) { toast(err.message, 'err'); }
+      try { analysis = await api.json(id, 'analysis.json'); } catch (err) { toast(errMsg(err), 'err'); }
     }
     setHeader(hostOf(summary.url), fmtDate(summary.startedAt));
     renderShell();
   };
 
   const renderShell = () => {
-    const modules = analysis ? (state.meta?.collectors || []).filter(c => analysis[c.name] !== undefined) : [];
+    const a = analysis;
+    const modules = a ? (state.meta?.collectors || []).filter(c => a[c.name] !== undefined) : [];
     html(el, `
       <div class="detail-head">
         <div class="meta">
@@ -138,12 +141,12 @@ function mountDetail(el, id, { setHeader }) {
         await api.deleteSession(id);
         toast(t('sessions.deleted'), 'ok');
         location.hash = '#/sessions';
-      } catch (err) { toast(err.message, 'err'); }
+      } catch (err) { toast(errMsg(err), 'err'); }
     };
     $('#dTabs', el).onclick = e => {
-      const b = e.target.closest('button[data-tab]');
+      const b = (e.target as Element).closest<HTMLElement>('button[data-tab]');
       if (!b) return;
-      tab = b.dataset.tab;
+      tab = b.dataset.tab!;
       $$('#dTabs button', el).forEach(x => x.classList.toggle('active', x === b));
       renderPanel(modules);
     };
@@ -152,29 +155,30 @@ function mountDetail(el, id, { setHeader }) {
 
   const panel = () => $('#dPanel', el);
 
-  const renderPanel = modules => {
+  const renderPanel = (modules: CollectorDefinition[]): void => {
     if (tab === 'overview') return renderOverview();
     if (tab === 'snapshots') return renderSnapshots();
     if (tab === 'network') return renderNetwork();
     if (tab === 'console') return renderConsole();
     if (tab === 'modules') return renderModules(modules);
-    if (tab === 'files') return renderFiles();
+    if (tab === 'files') void renderFiles();
   };
 
   // --- overview ---
   const renderOverview = () => {
-    const c = summary.counts || {};
-    const a = analysis || {};
+    const c: Partial<SessionSummary['counts']> = summary.counts || {};
+    const a: Analysis = analysis || {};
     const ov = a.elements?.overview;
     const sec = a.security;
     const perf = a.performance;
     const nav = perf?.timing?.navigation;
-    const ms = v => (v == null ? '—' : t('common.ms', { n: fmtNumber(v) }));
-    const kv = rows => `<dl class="kv">${rows.filter(Boolean).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join('')}</dl>`;
-    const card = (ic, title, body) => `<div class="card"><div class="card-head">${icon(ic)}<h3>${esc(title)}</h3></div>${body}</div>`;
-    const yesNo = b => (b ? `<span class="pill ok">${esc(t('ins.yes'))}</span>` : `<span class="pill err">${esc(t('ins.no'))}</span>`);
+    const ms = (v: number | null | undefined) => (v == null ? '—' : t('common.ms', { n: fmtNumber(v) }));
+    type Row = [string, string] | null | false | undefined;
+    const kv = (rows: Row[]) => `<dl class="kv">${rows.filter((r): r is [string, string] => !!r).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join('')}</dl>`;
+    const card = (ic: string, title: string, body: string) => `<div class="card"><div class="card-head">${icon(ic)}<h3>${esc(title)}</h3></div>${body}</div>`;
+    const yesNo = (b: unknown) => (b ? `<span class="pill ok">${esc(t('ins.yes'))}</span>` : `<span class="pill err">${esc(t('ins.no'))}</span>`);
 
-    const cards = [];
+    const cards: string[] = [];
     if (ov) cards.push(card('code', t('ins.page'), kv([
       [t('ins.title'), esc(ov.title || '—')],
       [t('ins.elements'), fmtNumber(ov.elementCount)],
@@ -190,7 +194,7 @@ function mountDetail(el, id, { setHeader }) {
       [t('ins.cookieIssues'), fmtNumber(sec.cookieIssues?.length ?? 0)]
     ])}
       <div class="small muted" style="margin:12px 0 6px">${esc(t('ins.missingHeaders'))}</div>
-      <div class="chips">${(sec.missingHeaders || []).length ? sec.missingHeaders.map(h => `<span class="chip" style="color:var(--warn)">${esc(h)}</span>`).join('') : `<span class="pill ok">${esc(t('ins.none'))}</span>`}</div>`));
+      <div class="chips">${(sec.missingHeaders || []).length ? sec.missingHeaders.map((h: string) => `<span class="chip" style="color:var(--warn)">${esc(h)}</span>`).join('') : `<span class="pill ok">${esc(t('ins.none'))}</span>`}</div>`));
     if (perf) cards.push(card('gauge', t('ins.performance'), kv([
       [t('ins.ttfb'), ms(nav?.ttfb)],
       [t('ins.dcl'), ms(nav?.domContentLoaded)],
@@ -214,18 +218,18 @@ function mountDetail(el, id, { setHeader }) {
       [t('ins.local'), fmtNumber(Object.keys(a.application.storageInfo?.localStorage || {}).length)],
       [t('ins.idb'), fmtNumber(Object.keys(a.application.storageInfo?.indexedDB || {}).length)]
     ])));
-    const devFiles = [
+    const devFiles = ([
       perf?.tracePath ? [t('ins.trace'), perf.tracePath] : null,
       a.memory?.heapSnapshotPath ? [t('ins.heapFile'), a.memory.heapSnapshotPath] : null
-    ].filter(Boolean);
+    ] as ([string, string] | null)[]).filter((f): f is [string, string] => !!f);
     if (devFiles.length) cards.push(card('download', 'DevTools', `<p class="muted small" style="margin-top:0">${esc(t('ins.devtoolsHint'))}</p>
       <ul class="list-plain">${devFiles.map(([label, p]) => `<li>${icon('file')}<span style="flex:1">${esc(label)}</span><a class="btn sm" href="${api.fileUrl(id, p, true)}">${icon('download')}${esc(t('common.download'))}</a></li>`).join('')}</ul>`));
 
     html(panel(), `
       <div class="stack">
         <div class="stats">
-          ${[['network', 'stat.requests', c.requests], ['alert', 'stat.failed', c.failedRequests, c.failedRequests ? 'err' : ''], ['terminal', 'stat.console', c.console], ['alert', 'stat.errors', c.errors, c.errors ? 'err' : ''], ['mouse', 'stat.clicks', c.clicks], ['camera', 'stat.snapshots', c.snapshots, 'accent']]
-            .map(([ic, l, v, cls]) => `<div class="stat ${cls || ''}"><span class="label">${icon(ic)}${esc(t(l))}</span><span class="value">${fmtNumber(v ?? 0)}</span></div>`).join('')}
+          ${([['network', 'stat.requests', c.requests], ['alert', 'stat.failed', c.failedRequests, c.failedRequests ? 'err' : ''], ['terminal', 'stat.console', c.console], ['alert', 'stat.errors', c.errors, c.errors ? 'err' : ''], ['mouse', 'stat.clicks', c.clicks], ['camera', 'stat.snapshots', c.snapshots, 'accent']
+            ] as [string, string, number | undefined, string?][]).map(([ic, l, v, cls]) => `<div class="stat ${cls || ''}"><span class="label">${icon(ic)}${esc(t(l))}</span><span class="value">${fmtNumber(v ?? 0)}</span></div>`).join('')}
         </div>
         ${analysis ? '' : `<div class="card muted">${esc(t('sessions.noAnalysis'))}</div>`}
         <div class="chips">${(summary.collectors || []).map(n => `<span class="chip on">${icon(COLLECTOR_ICONS[n])}${esc(t('col.' + n))}</span>`).join('')}</div>
@@ -253,12 +257,14 @@ function mountDetail(el, id, { setHeader }) {
         </div>
       </div>`).join('')}</div>`);
     panel().onclick = async e => {
-      const img = e.target.closest('[data-img]');
-      if (img) openDrawer('Screenshot', `<img class="full" src="${api.fileUrl(id, img.dataset.img)}">`);
-      const js = e.target.closest('[data-json]');
+      const target = e.target as Element;
+      const img = target.closest<HTMLElement>('[data-img]');
+      if (img) openDrawer('Screenshot', `<img class="full" src="${api.fileUrl(id, img.dataset.img!)}">`);
+      const js = target.closest<HTMLElement>('[data-json]');
       if (js) {
-        const body = openDrawer(js.dataset.json, `<div id="jv">${esc(t('common.loading'))}</div>`);
-        try { renderJson($('#jv', body), await api.json(id, js.dataset.json), 2); } catch (err) { toast(err.message, 'err'); }
+        const file = js.dataset.json!;
+        const body = openDrawer(file, `<div id="jv">${esc(t('common.loading'))}</div>`);
+        try { renderJson($('#jv', body), await api.json<unknown>(id, file), 2); } catch (err) { toast(errMsg(err), 'err'); }
       }
     };
   };
@@ -266,7 +272,7 @@ function mountDetail(el, id, { setHeader }) {
   // --- network ---
   const renderNetwork = () => {
     const reqs = analysis?.network?.requests || [];
-    const resps = new Map((analysis?.network?.responses || []).map(r => [r.requestId, r]));
+    const resps = new Map<string, NetworkResponse>((analysis?.network?.responses || []).map(r => [r.requestId, r]));
     html(panel(), `
       <div class="toolbar">
         <input class="input" id="nf" placeholder="${esc(t('net.filter'))}" value="${esc(netUi.filter)}">
@@ -293,19 +299,20 @@ function mountDetail(el, id, { setHeader }) {
           <td class="url" title="${esc(r.url)}">${esc(r.url)}</td></tr>`;
       }).join('') : `<tr><td colspan="6" class="empty">${esc(t('net.empty'))}</td></tr>`;
     };
-    $('#nf', panel()).oninput = debounce(e => { netUi.filter = e.target.value; fill(); }, 150);
+    $('#nf', panel()).oninput = debounce((e: Event) => { netUi.filter = inputValue(e); fill(); }, 150);
     $('#nt', panel()).onclick = e => {
-      const b = e.target.closest('button');
+      const b = (e.target as Element).closest('button');
       if (!b) return;
-      netUi.type = b.dataset.k;
+      netUi.type = b.dataset.k!;
       $$('#nt button', panel()).forEach(x => x.classList.toggle('active', x === b));
       fill();
     };
     $('#nb', panel()).onclick = e => {
-      const tr = e.target.closest('tr[data-id]');
+      const tr = (e.target as Element).closest<HTMLElement>('tr[data-id]');
       if (!tr) return;
       const r = reqs.find(x => x.id === tr.dataset.id);
-      const resp = resps.get(tr.dataset.id);
+      if (!r) return;
+      const resp = resps.get(r.id);
       const body = openDrawer(`${r.method} ${hostOf(r.url)}`, `
         <pre class="code">${esc(r.url)}</pre>
         <div><h4>${esc(t('net.request'))} · ${esc(t('net.headers'))}</h4>${headersTable(r.headers)}</div>
@@ -323,7 +330,7 @@ function mountDetail(el, id, { setHeader }) {
   // --- console ---
   const renderConsole = () => {
     const c = analysis?.console || { logs: [], pageErrors: [], dialogs: [] };
-    const lines = [
+    const lines: ConsoleLine[] = [
       ...c.logs,
       ...c.pageErrors.map(e => ({ timestamp: e.timestamp, type: 'error', text: e.message, stack: e.stack, pageError: true })),
       ...c.dialogs.map(d => ({ timestamp: d.timestamp, type: 'info', text: `[dialog:${d.type}] ${d.message}` }))
@@ -337,7 +344,7 @@ function mountDetail(el, id, { setHeader }) {
   };
 
   // --- modules ---
-  const renderModules = modules => {
+  const renderModules = (modules: CollectorDefinition[]): void => {
     if (!modules.length) {
       html(panel(), `<div class="card empty">${esc(t('common.noData'))}</div>`);
       return;
@@ -360,21 +367,21 @@ function mountDetail(el, id, { setHeader }) {
     const show = () => {
       $$('#ml button', panel()).forEach(b => b.classList.toggle('active', b.dataset.m === active));
       $('#mTitle', panel()).textContent = `${active}/${active}.json`;
-      $('#mDl', panel()).href = api.fileUrl(id, `${active}/${active}.json`, true);
+      $<HTMLAnchorElement>('#mDl', panel()).href = api.fileUrl(id, `${active}/${active}.json`, true);
       const view = $('#mView', panel());
       if (mode === 'raw') {
         view.className = '';
-        const text = JSON.stringify(analysis[active], null, 2);
+        const text = JSON.stringify(analysis?.[active], null, 2);
         view.innerHTML = `<pre class="code" style="max-height:640px">${esc(text.length > 2_000_000 ? text.slice(0, 2_000_000) + '\n…' : text)}</pre>`;
       } else {
-        renderJson(view, analysis[active], 2);
+        renderJson(view, analysis?.[active], 2);
       }
     };
-    $('#ml', panel()).onclick = e => { const b = e.target.closest('button'); if (b) { active = b.dataset.m; show(); } };
+    $('#ml', panel()).onclick = e => { const b = (e.target as Element).closest('button'); if (b) { active = b.dataset.m!; show(); } };
     $('#mMode', panel()).onclick = e => {
-      const b = e.target.closest('button');
+      const b = (e.target as Element).closest('button');
       if (!b) return;
-      mode = b.dataset.v;
+      mode = b.dataset.v!;
       $$('#mMode button', panel()).forEach(x => x.classList.toggle('active', x === b));
       show();
     };
@@ -398,7 +405,7 @@ function mountDetail(el, id, { setHeader }) {
             <a class="btn sm ghost" href="${api.fileUrl(id, f.path, true)}">${icon('download')}</a>
           </td></tr>`).join('')}</tbody></table></div>`);
     } catch (err) {
-      html(panel(), `<div class="empty">${esc(err.message)}</div>`);
+      html(panel(), `<div class="empty">${esc(errMsg(err))}</div>`);
     }
   };
 

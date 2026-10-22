@@ -4,7 +4,19 @@ import { t } from './i18n.js';
 
 const PAGE = 200;
 
-function primitive(v) {
+type Json = unknown;
+type JsonContainer = Record<string, unknown> | unknown[];
+
+/** A tree row that can be expanded / collapsed programmatically. */
+interface TreeRow extends HTMLDivElement {
+  toggleOpen?: (force?: boolean) => void;
+}
+
+function isContainer(v: Json): v is JsonContainer {
+  return v !== null && typeof v === 'object';
+}
+
+function primitive(v: Json): string {
   if (v === null) return '<span class="null">null</span>';
   switch (typeof v) {
     case 'string': {
@@ -17,13 +29,13 @@ function primitive(v) {
   }
 }
 
-function summary(v) {
+function summary(v: JsonContainer): string {
   if (Array.isArray(v)) return `[…] <span class="meta">${esc(t('common.items', { n: v.length }))}</span>`;
   return `{…} <span class="meta">${esc(t('common.keys', { n: Object.keys(v).length }))}</span>`;
 }
 
-function renderChildren(container, value, start = 0) {
-  const entries = Array.isArray(value) ? value.map((v, i) => [i, v]) : Object.entries(value);
+function renderChildren(container: HTMLElement, value: JsonContainer, start = 0): void {
+  const entries: [string | number, Json][] = Array.isArray(value) ? value.map((v, i) => [i, v]) : Object.entries(value);
   const slice = entries.slice(start, start + PAGE);
   const frag = document.createDocumentFragment();
   for (const [k, v] of slice) frag.appendChild(renderEntry(k, v, Array.isArray(value)));
@@ -37,10 +49,10 @@ function renderChildren(container, value, start = 0) {
   }
 }
 
-function renderEntry(key, value, isIndex, open = false) {
-  const row = document.createElement('div');
+function renderEntry(key: string | number | null, value: Json, isIndex: boolean, open = false): TreeRow {
+  const row: TreeRow = document.createElement('div');
   const label = key === null ? '' : isIndex ? `<span class="meta">${key}</span>: ` : `<span class="key">"${esc(key)}"</span>: `;
-  if (value !== null && typeof value === 'object') {
+  if (isContainer(value)) {
     const empty = Array.isArray(value) ? value.length === 0 : Object.keys(value).length === 0;
     if (empty) {
       row.innerHTML = `${label}<span class="meta">${Array.isArray(value) ? '[]' : '{}'}</span>`;
@@ -53,14 +65,14 @@ function renderEntry(key, value, isIndex, open = false) {
     kids.className = 'node';
     kids.hidden = true;
     let rendered = false;
-    const toggle = force => {
-      const show = force ?? kids.hidden;
+    const toggle = (force?: boolean) => {
+      const show = force ?? kids.hidden === true;
       if (show && !rendered) { renderChildren(kids, value); rendered = true; }
       kids.hidden = !show;
       row.classList.toggle('open', show);
     };
     head.onclick = () => toggle();
-    row._toggle = toggle;
+    row.toggleOpen = toggle;
     row.appendChild(head);
     row.appendChild(kids);
     if (open) toggle(true);
@@ -70,27 +82,31 @@ function renderEntry(key, value, isIndex, open = false) {
   return row;
 }
 
+function childRows(el: Element): TreeRow[] {
+  return Array.from(el.querySelectorAll<TreeRow>(':scope > .node > div'));
+}
+
 /** Render `data` into `container`; the first `depth` levels are expanded. */
-export function renderJson(container, data, depth = 1) {
+export function renderJson(container: HTMLElement, data: Json, depth = 1): void {
   container.innerHTML = '';
   container.classList.add('json');
   const root = renderEntry(null, data, false, true);
   container.appendChild(root);
-  const expand = (el, level) => {
+  const expand = (el: Element, level: number) => {
     if (level >= depth) return;
-    el.querySelectorAll(':scope > .node > div').forEach(child => {
-      if (child._toggle) { child._toggle(true); expand(child, level + 1); }
+    childRows(el).forEach(child => {
+      if (child.toggleOpen) { child.toggleOpen(true); expand(child, level + 1); }
     });
   };
   expand(root, 1);
 }
 
-export function expandAll(container, maxNodes = 3000) {
+export function expandAll(container: HTMLElement, maxNodes = 3000): void {
   let count = 0;
-  const walk = el => {
-    el.querySelectorAll(':scope > .node > div').forEach(child => {
+  const walk = (el: Element) => {
+    childRows(el).forEach(child => {
       if (count > maxNodes) return;
-      if (child._toggle) { child._toggle(true); count++; walk(child); }
+      if (child.toggleOpen) { child.toggleOpen(true); count++; walk(child); }
     });
   };
   const root = container.firstElementChild;

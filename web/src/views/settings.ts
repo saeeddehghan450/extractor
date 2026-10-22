@@ -2,11 +2,12 @@ import { api } from '../api.js';
 import { icon } from '../icons.js';
 import { t } from '../i18n.js';
 import { state } from '../store.js';
-import { $, esc, html, toast } from '../util.js';
+import { $, errMsg, esc, html, toast } from '../util.js';
+import type { ViewContext } from '../types.js';
 
-export function mount(el, _params, { setHeader }) {
+export function mount(el: HTMLElement, _params: string[], { setHeader }: ViewContext): void {
   setHeader(t('settings.title'), t('settings.subtitle'));
-  const cfg = state.config || {};
+  const cfg: Partial<NonNullable<typeof state.config>> = state.config || {};
   const vp = cfg.viewport || { width: 1280, height: 800 };
 
   html(el, `
@@ -58,20 +59,21 @@ export function mount(el, _params, { setHeader }) {
     </form>
   `);
 
-  $('#settingsForm', el).onsubmit = async e => {
+  const input = (sel: string) => $<HTMLInputElement>(sel, el);
+  $<HTMLFormElement>('#settingsForm', el).onsubmit = async e => {
     e.preventDefault();
     try {
       state.config = await api.saveConfig({
-        targetUrl: $('#targetUrl', el).value,
-        headless: state.meta?.forceHeadless ? undefined : $('#headless', el).checked,
-        slowMo: Number($('#slowMo', el).value) || 0,
-        performanceTraceMs: Number($('#trace', el).value) || 0,
-        viewport: { width: Number($('#vpW', el).value), height: Number($('#vpH', el).value) },
-        executablePath: $('#exe', el).value
+        targetUrl: input('#targetUrl').value,
+        headless: state.meta?.forceHeadless ? undefined : input('#headless').checked,
+        slowMo: Number(input('#slowMo').value) || 0,
+        performanceTraceMs: Number(input('#trace').value) || 0,
+        viewport: { width: Number(input('#vpW').value), height: Number(input('#vpH').value) },
+        executablePath: input('#exe').value
       });
       toast(t('settings.saved'), 'ok');
     } catch (err) {
-      toast(err.message, 'err');
+      toast(errMsg(err), 'err');
     }
   };
 }

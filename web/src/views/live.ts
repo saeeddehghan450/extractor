@@ -1,11 +1,14 @@
 import { api } from '../api.js';
 import { icon, COLLECTOR_ICONS } from '../icons.js';
 import { t, fmtNumber, fmtTime } from '../i18n.js';
-import { state, on, emit } from '../store.js';
-import { $, $$, esc, html, toast, openDrawer, fmtBytes, fmtDuration, statusClass, headersTable, debounce, copyText } from '../util.js';
+import { state, on, onAny, emit } from '../store.js';
+import type { EventType } from '../store.js';
+import type { InputAction } from '../api.js';
+import type { NetworkRow, SessionSummary, ViewContext } from '../types.js';
+import { $, $$, esc, errMsg, html, inputValue, toast, openDrawer, fmtBytes, fmtDuration, statusClass, headersTable, debounce, copyText } from '../util.js';
 import { renderJson } from '../jsonView.js';
 
-const NET_TYPES = [
+const NET_TYPES: [string, string][] = [
   ['all', 'net.all'],
   ['document', 'Doc'],
   ['xhr', 'Fetch/XHR'],
@@ -19,14 +22,14 @@ const NET_TYPES = [
 const KEY_MAP = new Set(['Enter', 'Backspace', 'Tab', 'Escape', 'Delete', 'Home', 'End', 'PageUp', 'PageDown',
   'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
 
-const isActive = s => s && (s.status === 'running' || s.status === 'starting' || s.status === 'stopping');
+const isActive = (s: SessionSummary | null): boolean => !!s && (s.status === 'running' || s.status === 'starting' || s.status === 'stopping');
 
-export function mount(el, _params, { setHeader }) {
+export function mount(el: HTMLElement, _params: string[], { setHeader }: ViewContext): () => void {
   setHeader(t('live.title'), t('live.subtitle'));
-  const cleanups = [];
-  let mode = null;
+  const cleanups: (() => void)[] = [];
+  let mode: 'running' | 'start' | null = null;
   let finishedSession = state.session && state.session.status === 'finished' ? state.session : null;
-  let disposeMode = null;
+  let disposeMode: (() => void) | null = null;
 
   const renderMode = () => {
     const s = state.session;
@@ -52,9 +55,9 @@ export function mount(el, _params, { setHeader }) {
 // start screen
 // ---------------------------------------------------------------------------
 
-function renderStart(el, finished) {
-  const cfg = state.config || { targetUrl: '', headless: false, collectors: {} };
-  const meta = state.meta || { collectors: [], presets: [] };
+function renderStart(el: HTMLElement, finished: SessionSummary | null): () => void {
+  const cfg = state.config || { targetUrl: '', headless: false, collectors: {} as Record<string, { enabled: boolean }> };
+  const meta = state.meta || { collectors: [], presets: [], forceHeadless: false };
   const enabled = meta.collectors.filter(c => cfg.collectors[c.name]?.enabled);
 
   html(el, `
@@ -112,20 +115,20 @@ function renderStart(el, finished) {
     </div>
   `);
 
-  const form = $('#startForm', el);
+  const form = $<HTMLFormElement>('#startForm', el);
   form.onsubmit = async e => {
     e.preventDefault();
-    const btn = $('#startBtn', el);
-    const url = $('#url', el).value.trim();
+    const btn = $<HTMLButtonElement>('#startBtn', el);
+    const url = $<HTMLInputElement>('#url', el).value.trim();
     btn.disabled = true;
     btn.innerHTML = `<span class="spinner"></span><span>${esc(t('live.starting'))}</span>`;
     try {
-      const summary = await api.start({ url: url || undefined, headless: $('#headless', el).checked });
+      const summary = await api.start({ url: url || undefined, headless: $<HTMLInputElement>('#headless', el).checked });
       state.session = summary;
       // the status event switches the view; emit it too in case the event was missed
       emit('status', summary);
     } catch (err) {
-      toast(err.message, 'err', 7000);
+      toast(errMsg(err), 'err', 7000);
       btn.disabled = false;
       btn.innerHTML = `${icon('play')}<span>${esc(t('live.start'))}</span>`;
     }
@@ -138,8 +141,8 @@ function renderStart(el, finished) {
 // running session
 // ---------------------------------------------------------------------------
 
-function renderRunning(el) {
-  const s = state.session;
+function renderRunning(el: HTMLElement): () => void {
+  const s = state.session!;
   const vp = state.config?.viewport || { width: 1280, height: 800 };
   const ui = { tab: 'network', netType: 'all', netFilter: '', conLevel: 'all', conFilter: '' };
 
@@ -190,9 +193,9 @@ function renderRunning(el) {
 
   // --- stats ---
   const renderStats = () => {
-    const c = state.session?.counts || {};
+    const c: Partial<SessionSummary['counts']> = state.session?.counts || {};
     const started = new Date(state.session?.startedAt || Date.now()).getTime();
-    const items = [
+    const items: [string, string, number | null | undefined, string, string?][] = [
       ['network', 'stat.requests', c.requests, ''],
       ['alert', 'stat.failed', c.failedRequests, c.failedRequests ? 'err' : ''],
       ['terminal', 'stat.console', c.console, ''],
@@ -233,25 +236,27 @@ function renderRunning(el) {
   };
 
   $('#timeline', el).addEventListener('click', async e => {
-    const shot = e.target.closest('[data-shot]');
-    const json = e.target.closest('[data-json]');
-    const id = state.session?.id;
-    if (shot) openDrawer('Screenshot', `<img class="full" src="${api.fileUrl(id, shot.dataset.shot)}">`);
+    const target = e.target as Element;
+    const shot = target.closest<HTMLElement>('[data-shot]');
+    const json = target.closest<HTMLElement>('[data-json]');
+    const id = state.session?.id || '';
+    if (shot) openDrawer('Screenshot', `<img class="full" src="${api.fileUrl(id, shot.dataset.shot!)}">`);
     if (json) {
-      const body = openDrawer(json.dataset.json, `<div id="jv">${esc(t('common.loading'))}</div>`);
-      try { renderJson($('#jv', body), await api.json(id, json.dataset.json), 2); } catch (err) { toast(err.message, 'err'); }
+      const file = json.dataset.json!;
+      const body = openDrawer(file, `<div id="jv">${esc(t('common.loading'))}</div>`);
+      try { renderJson($('#jv', body), await api.json<unknown>(id, file), 2); } catch (err) { toast(errMsg(err), 'err'); }
     }
   });
 
   // --- tabs & panels ---
-  const setTab = tab => {
+  const setTab = (tab: string) => {
     ui.tab = tab;
     $$('#tabs button', el).forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
     buildPanel();
   };
   $('#tabs', el).addEventListener('click', e => {
-    const b = e.target.closest('button[data-tab]');
-    if (b) setTab(b.dataset.tab);
+    const b = (e.target as Element).closest<HTMLElement>('button[data-tab]');
+    if (b) setTab(b.dataset.tab!);
   });
 
   const buildPanel = () => {
@@ -266,17 +271,17 @@ function renderRunning(el) {
           <thead><tr><th>${esc(t('net.method'))}</th><th>${esc(t('net.status'))}</th><th>${esc(t('net.type'))}</th><th>${esc(t('net.size'))}</th><th>${esc(t('net.time'))}</th><th>${esc(t('net.url'))}</th></tr></thead>
           <tbody id="netBody"></tbody>
         </table></div>`);
-      $('#netFilter', panel).oninput = debounce(e => { ui.netFilter = e.target.value; renderNet(); }, 150);
+      $('#netFilter', panel).oninput = debounce((e: Event) => { ui.netFilter = inputValue(e); renderNet(); }, 150);
       $('#netType', panel).onclick = e => {
-        const b = e.target.closest('button');
+        const b = (e.target as Element).closest('button');
         if (!b) return;
-        ui.netType = b.dataset.k;
+        ui.netType = b.dataset.k!;
         $$('#netType button', panel).forEach(x => x.classList.toggle('active', x === b));
         renderNet();
       };
       $('#netBody', panel).onclick = e => {
-        const tr = e.target.closest('tr[data-id]');
-        if (tr) showRequest(tr.dataset.id);
+        const tr = (e.target as Element).closest<HTMLElement>('tr[data-id]');
+        if (tr) showRequest(tr.dataset.id!);
       };
       renderNet();
     } else if (ui.tab === 'console') {
@@ -286,11 +291,11 @@ function renderRunning(el) {
           <div class="seg" id="conLevel">${['all', 'error', 'warn', 'log'].map(k => `<button data-k="${k}" class="${ui.conLevel === k ? 'active' : ''}">${k === 'all' ? esc(t('net.all')) : k}</button>`).join('')}</div>
         </div>
         <div class="console" id="conBody"></div>`);
-      $('#conFilter', panel).oninput = debounce(e => { ui.conFilter = e.target.value.toLowerCase(); renderConsole(); }, 150);
+      $('#conFilter', panel).oninput = debounce((e: Event) => { ui.conFilter = inputValue(e).toLowerCase(); renderConsole(); }, 150);
       $('#conLevel', panel).onclick = e => {
-        const b = e.target.closest('button');
+        const b = (e.target as Element).closest('button');
         if (!b) return;
-        ui.conLevel = b.dataset.k;
+        ui.conLevel = b.dataset.k!;
         $$('#conLevel button', panel).forEach(x => x.classList.toggle('active', x === b));
         renderConsole();
       };
@@ -301,9 +306,9 @@ function renderRunning(el) {
     }
   };
 
-  const typeMatch = (row, type) => {
+  const typeMatch = (row: NetworkRow, type: string): boolean => {
     if (type === 'all') return true;
-    const rt = row.resourceType;
+    const rt = row.resourceType || '';
     if (type === 'xhr') return rt === 'xhr' || rt === 'fetch';
     if (type === 'other') return !['document', 'xhr', 'fetch', 'script', 'stylesheet', 'image', 'font'].includes(rt);
     return rt === type;
@@ -375,12 +380,12 @@ function renderRunning(el) {
     if (cCon) cCon.textContent = fmtNumber(state.live.console.length);
   };
 
-  async function showRequest(id) {
+  async function showRequest(id: string) {
     const body = openDrawer(t('net.request'), `<div class="muted">${esc(t('common.loading'))}</div>`);
     try {
       const { request, response } = await api.liveRequest(id);
-      const sid = state.session?.id;
-      const r = request || {};
+      const sid = state.session?.id || '';
+      const r: Partial<NonNullable<typeof request>> = request || {};
       html(body, `
         <div>
           <div class="row" style="margin-bottom:8px">
@@ -411,17 +416,17 @@ function renderRunning(el) {
       if (response?.securityDetails) renderJson($('#tls', body), response.securityDetails, 1);
       $('#copyUrl', body).onclick = () => copyText(r.url || response?.url || '');
     } catch (err) {
-      html(body, `<div class="empty">${esc(err.message)}</div>`);
+      html(body, `<div class="empty">${esc(errMsg(err))}</div>`);
     }
   }
 
   // --- browser controls ---
-  const shot = $('#shot', el);
+  const shot = $<HTMLImageElement>('#shot', el);
   const overlay = $('#shotOverlay', el);
   const viewport = $('#viewport', el);
   let alive = true;
-  let timer = null;
-  let lastUrl = null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let lastUrl: string | null = null;
 
   const refreshShot = async () => {
     clearTimeout(timer);
@@ -446,17 +451,17 @@ function renderRunning(el) {
   };
   const soon = () => { clearTimeout(timer); timer = setTimeout(refreshShot, 250); };
 
-  const send = async body => {
+  const send = async (body: InputAction) => {
     try {
       const r = await api.input(body);
-      if (r.url) $('#navUrl', el).value = r.url;
+      if (r.url) $<HTMLInputElement>('#navUrl', el).value = r.url;
     } catch (err) {
-      toast(err.message, 'err');
+      toast(errMsg(err), 'err');
     }
     soon();
   };
 
-  const ripple = (x, y) => {
+  const ripple = (x: number, y: number) => {
     const d = document.createElement('div');
     d.className = 'ripple';
     d.style.left = `${x}px`;
@@ -493,32 +498,32 @@ function renderRunning(el) {
     }
   });
 
-  $$('[data-nav]', el).forEach(b => { b.onclick = () => send({ action: b.dataset.nav }); });
-  $('#navForm', el).onsubmit = e => { e.preventDefault(); send({ action: 'navigate', url: $('#navUrl', el).value }); };
+  $$('[data-nav]', el).forEach(b => { b.onclick = () => send({ action: b.dataset.nav as 'back' | 'forward' | 'reload' }); });
+  $('#navForm', el).onsubmit = e => { e.preventDefault(); send({ action: 'navigate', url: $<HTMLInputElement>('#navUrl', el).value }); };
 
   $('#snapBtn', el).onclick = async () => {
-    const b = $('#snapBtn', el);
+    const b = $<HTMLButtonElement>('#snapBtn', el);
     b.disabled = true;
-    try { await api.snapshot(); } catch (err) { toast(err.message, 'err'); }
+    try { await api.snapshot(); } catch (err) { toast(errMsg(err), 'err'); }
     b.disabled = false;
   };
   $('#stopBtn', el).onclick = async () => {
-    const b = $('#stopBtn', el);
+    const b = $<HTMLButtonElement>('#stopBtn', el);
     b.disabled = true;
-    $('#snapBtn', el).disabled = true;
+    $<HTMLButtonElement>('#snapBtn', el).disabled = true;
     b.innerHTML = `<span class="spinner"></span><span>${esc(t('live.stopping'))}</span>`;
-    try { await api.stop(); } catch (err) { toast(err.message, 'err'); b.disabled = false; }
+    try { await api.stop(); } catch (err) { toast(errMsg(err), 'err'); b.disabled = false; }
   };
 
   // --- live updates ---
   let dirty = { net: true, con: true, logs: true, tl: true };
-  const unsub = on('*', type => {
+  const unsub = onAny((type: EventType) => {
     if (type === 'request' || type === 'response') dirty.net = true;
     else if (type === 'console') dirty.con = true;
     else if (type === 'log') dirty.logs = true;
     else if (type === 'snapshot' || type === 'snapshot-start') { dirty.tl = true; if (type === 'snapshot') soon(); }
     else if (type === 'navigated') {
-      const input = $('#navUrl', el);
+      const input = $<HTMLInputElement>('#navUrl', el);
       if (input && document.activeElement !== input) input.value = state.session?.currentUrl || input.value;
       soon();
     } else if (type === 'click') soon();
@@ -532,7 +537,7 @@ function renderRunning(el) {
     if (dirty.con && ui.tab === 'console') { renderConsole(); dirty.con = false; }
     if (dirty.logs && ui.tab === 'logs') { renderLogs(); dirty.logs = false; }
     if (state.session?.status === 'stopping') {
-      const b = $('#stopBtn', el);
+      const b = $<HTMLButtonElement>('#stopBtn', el);
       if (b && !b.disabled) { b.disabled = true; b.innerHTML = `<span class="spinner"></span><span>${esc(t('live.stopping'))}</span>`; }
     }
   }, 500);
