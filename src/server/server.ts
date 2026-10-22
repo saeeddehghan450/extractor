@@ -10,7 +10,12 @@ import fs from 'fs';
 import path from 'path';
 import { URL } from 'url';
 import { COLLECTORS } from '../collectors/registry';
-import { ExtractorSession } from '../core/session';
+import { ExtractorSession, packageVersion } from '../core/session';
+import { DEVICE_PRESETS, NETWORK_PRESETS } from '../core/emulation';
+import { buildHar } from '../core/har';
+import { ReportLang, renderReport } from '../core/report';
+import { searchSession } from '../core/search';
+import { readJSON } from '../utils/fileUtils';
 import {
   OUTPUT_DIR,
   deleteSession,
@@ -18,7 +23,8 @@ import {
   isValidSessionId,
   listSessionFiles,
   listSessions,
-  resolveSessionFile
+  resolveSessionFile,
+  sessionDir
 } from '../core/sessionStore';
 import { getCollectorFlags, isHeadlessForced, loadConfig, updateConfig } from '../utils/configManager';
 import { PRESETS, applyPreset, isPresetName } from '../utils/presets';
@@ -91,6 +97,7 @@ function wireSession(s: ExtractorSession) {
   s.on('snapshot-start', d => broadcast('snapshot-start', d));
   s.on('snapshot', snap => broadcast('snapshot', snap));
   s.on('navigated', d => broadcast('navigated', d));
+  s.on('blocked', d => broadcast('blocked', d));
 
   // counters change constantly; send them at most once per second
   let last = '';
@@ -188,7 +195,10 @@ async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, ur
       collectors: COLLECTORS,
       presets: Object.entries(PRESETS).map(([key, p]) => ({ key, name: p.name, description: p.description, collectors: p.collectors })),
       outputDir: OUTPUT_DIR,
-      forceHeadless: isHeadlessForced()
+      forceHeadless: isHeadlessForced(),
+      devices: Object.entries(DEVICE_PRESETS).map(([key, d]) => ({ key, label: d.label })),
+      networks: Object.entries(NETWORK_PRESETS).map(([key, n]) => ({ key, label: n.label })),
+      version: packageVersion()
     });
   }
   if (route === 'GET /config') return sendJSON(res, 200, loadConfig());
@@ -216,6 +226,24 @@ async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, ur
     return sendJSON(res, 200, { summary: current.summary(), requests, console: consoleLines, clicks: current.clicks.slice(-200) });
   }
 
+  if (route === 'GET /session/har') {
+    if (!current) throw new HttpError(404, 'No session');
+    const har = buildHar({
+      requests: current.network.requests,
+      responses: current.network.responses,
+      pageUrl: current.options.url,
+      startedAt: current.startedAt,
+      sessionDir: current.dir,
+      creatorVersion: packageVersion()
+    });
+    res.writeHead(200, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Content-Disposition': `attachment; filename="${current.id}.har"`,
+      'Cache-Control': 'no-store'
+    });
+    return res.end(JSON.stringify(har, null, 2));
+  }
+
   if (route === 'POST /session/start') {
     if (current?.isActive) throw new HttpError(409, 'A session is already running');
     const body = await readBody(req);
@@ -231,7 +259,8 @@ async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, ur
         viewport: cfg.viewport,
         performanceTraceMs: cfg.performanceTraceMs,
         collectors,
-        outputRoot: OUTPUT_DIR
+        outputRoot: OUTPUT_DIR,
+        emulation: { ...cfg.emulation, ...(body.emulation && typeof body.emulation === 'object' ? body.emulation : {}) }
       });
     } catch (e) {
       throw new HttpError(400, (e as Error).message);
@@ -307,6 +336,34 @@ async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, ur
       return sendJSON(res, 200, { ok: true });
     }
     if (method === 'GET' && parts[2] === 'files') return sendJSON(res, 200, listSessionFiles(id));
+
+    if (method === 'GET' && (parts[2] === 'report' || parts[2] === 'search')) {
+      const dir = sessionDir(id);
+      const analysis = readJSON(path.join(dir, 'analysis.json'));
+      if (!analysis) throw new HttpError(404, 'This session has no analysis.json yet');
+
+      if (parts[2] === 'search') {
+        const q = (url.searchParams.get('q') || '').slice(0, 500);
+        return sendJSON(res, 200, searchSession(dir, analysis, q, {
+          regex: url.searchParams.get('regex') === '1',
+          caseSensitive: url.searchParams.get('case') === '1',
+          limit: Number(url.searchParams.get('limit')) || undefined
+        }));
+      }
+
+      const lang: ReportLang = url.searchParams.get('lang') === 'fa' ? 'fa' : 'en';
+      const html = renderReport(analysis, readJSON(path.join(dir, 'session.json')), dir, lang);
+      const headers: Record<string, string | number> = {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Content-Length': Buffer.byteLength(html),
+        // the report needs no scripts; it may contain text captured from untrusted pages
+        'Content-Security-Policy': "default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox",
+        'X-Content-Type-Options': 'nosniff'
+      };
+      if (url.searchParams.get('download') === '1') headers['Content-Disposition'] = `attachment; filename="report-${id}.html"`;
+      res.writeHead(200, headers);
+      return res.end(html);
+    }
     if (method === 'GET' && parts[2] === 'file') {
       const rel = url.searchParams.get('path') || '';
       const file = resolveSessionFile(id, rel);

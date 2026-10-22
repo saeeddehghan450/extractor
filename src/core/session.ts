@@ -41,6 +41,16 @@ import { createCDPSession } from '../utils/cdpClient';
 import { ensureDir, relPath, writeJSON } from '../utils/fileUtils';
 import { debug, error, info, success, warn } from '../utils/logger';
 import { extractorPageScript } from './pageScript';
+import {
+  EmulationOptions,
+  applyNetworkConditions,
+  contextOptions,
+  describeEmulation,
+  installBlocking,
+  normalizeEmulation
+} from './emulation';
+import { buildHar } from './har';
+import { renderReport } from './report';
 
 export interface SessionOptions {
   url: string;
@@ -51,6 +61,8 @@ export interface SessionOptions {
   collectors: Record<string, boolean>;
   performanceTraceMs: number;
   outputRoot: string;
+  /** device / network emulation, custom UA / headers, URL blocking */
+  emulation?: Partial<EmulationOptions>;
 }
 
 export type SessionStatus = 'starting' | 'running' | 'stopping' | 'finished' | 'error';
@@ -80,6 +92,7 @@ export interface SessionCounts {
   dialogs: number;
   clicks: number;
   snapshots: number;
+  blocked: number;
 }
 
 export interface SessionSummary {
@@ -95,6 +108,10 @@ export interface SessionSummary {
   counts: SessionCounts;
   snapshots: SnapshotSummary[];
   analysisFile: string | null;
+  /** exported files (session-relative paths), written when the session finishes */
+  exports: { har: string | null; report: string | null };
+  viewport: { width: number; height: number } | null;
+  emulation: ReturnType<typeof describeEmulation>;
   error: string | null;
 }
 
@@ -126,6 +143,19 @@ function makeSessionId(url: string): string {
   return `${stamp}-${host.replace(/[^a-zA-Z0-9.-]/g, '_')}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
+let cachedVersion: string | null = null;
+
+/** Version from package.json (src/core and dist/core are both two levels below the root). */
+export function packageVersion(): string {
+  if (cachedVersion) return cachedVersion;
+  try {
+    cachedVersion = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', '..', 'package.json'), 'utf-8')).version as string;
+  } catch {
+    cachedVersion = '0.0.0';
+  }
+  return cachedVersion;
+}
+
 export function normalizeUrl(input: string): string {
   const url = input.trim();
   if (!url) throw new Error('URL is empty');
@@ -154,6 +184,12 @@ export class ExtractorSession extends EventEmitter {
   private seq = 0;
   private finalizing: Promise<void> | null = null;
 
+  readonly emulation: EmulationOptions;
+  readonly blockedUrls: string[] = [];
+  private pageSetup = new WeakMap<Page, Promise<void>>();
+  private viewport: { width: number; height: number } | null = null;
+  private exportsWritten = { har: null as string | null, report: null as string | null };
+
   readonly clicks: ClickedElementInfo[] = [];
   readonly snapshots: SnapshotSummary[] = [];
   private lastPageState: Record<string, unknown> = {};
@@ -164,6 +200,7 @@ export class ExtractorSession extends EventEmitter {
   constructor(options: SessionOptions) {
     super();
     this.options = { ...options, url: normalizeUrl(options.url) };
+    this.emulation = normalizeEmulation(options.emulation);
     this.id = makeSessionId(this.options.url);
     this.dir = path.join(options.outputRoot, this.id);
   }
@@ -205,9 +242,14 @@ export class ExtractorSession extends EventEmitter {
         slowMo: this.options.slowMo,
         executablePath
       });
-      this.context = await this.browser.newContext({
-        viewport: this.options.viewport,
-        ignoreHTTPSErrors: true
+      const ctxOptions = contextOptions(this.emulation, this.options.viewport);
+      this.viewport = ctxOptions.viewport || null;
+      this.context = await this.browser.newContext({ ...ctxOptions, ignoreHTTPSErrors: true });
+      const emu = describeEmulation(this.emulation);
+      info(`Device: ${emu.deviceLabel}, network: ${emu.networkLabel}${emu.blockPatterns.length ? `, blocking ${emu.blockPatterns.length} pattern(s)` : ''}`);
+      await installBlocking(this.context, this.emulation.blockPatterns || [], url => {
+        this.blockedUrls.push(url);
+        this.emit('blocked', { url });
       });
 
       if (this.isEnabled('network')) {
@@ -247,6 +289,9 @@ export class ExtractorSession extends EventEmitter {
       });
 
       this.page = await this.context.newPage();
+      // throttling must be active before the first navigation
+      this.attachPage(this.page);
+      await this.pageSetup.get(this.page);
       this.setStatus('running');
       info(`Opening page: ${this.options.url}`);
       await this.page.goto(this.options.url, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(e => {
@@ -270,6 +315,10 @@ export class ExtractorSession extends EventEmitter {
   }
 
   private attachPage(p: Page) {
+    if (this.pageSetup.has(p)) return;
+    this.pageSetup.set(p, this.cdpFor(p)
+      .then(cdp => applyNetworkConditions(cdp, this.emulation))
+      .catch(e => warn(`Network throttling failed: ${(e as Error).message}`)));
     p.on('framenavigated', frame => {
       if (frame === p.mainFrame()) this.emit('navigated', { url: frame.url() });
     });
@@ -459,6 +508,8 @@ export class ExtractorSession extends EventEmitter {
         finalUrl: this.snapshots.length ? this.snapshots[this.snapshots.length - 1].url : null,
         collectors: this.enabledCollectors,
         counts: this.counts(),
+        emulation: describeEmulation(this.emulation),
+        viewport: this.viewport,
         note: this.snapshots.length
           ? 'Page-state collectors contain the data of the latest snapshot; every snapshot is stored in snapshots/.'
           : 'No snapshot was taken (browser closed before any click/snapshot) - only stream collectors are available.'
@@ -468,6 +519,30 @@ export class ExtractorSession extends EventEmitter {
       ...modules
     };
     writeJSON(path.join(this.dir, 'analysis.json'), analysis);
+
+    if (this.isEnabled('network')) {
+      try {
+        const har = buildHar({
+          requests: this.network.requests,
+          responses: this.network.responses,
+          pageUrl: this.options.url,
+          startedAt: this.startedAt,
+          sessionDir: this.dir,
+          creatorVersion: packageVersion()
+        });
+        writeJSON(path.join(this.dir, 'network', 'network.har'), har);
+        this.exportsWritten.har = 'network/network.har';
+      } catch (e) {
+        warn(`HAR export failed: ${(e as Error).message}`);
+      }
+    }
+    try {
+      const html = renderReport(analysis, { ...this.summary(), endedAt: new Date().toISOString() }, this.dir, 'en');
+      fs.writeFileSync(path.join(this.dir, 'report.html'), html, 'utf-8');
+      this.exportsWritten.report = 'report.html';
+    } catch (e) {
+      warn(`Report export failed: ${(e as Error).message}`);
+    }
   }
 
   counts(): SessionCounts {
@@ -479,7 +554,8 @@ export class ExtractorSession extends EventEmitter {
       errors: this.consoleData.pageErrors.length + this.consoleData.logs.filter(l => l.type === 'error').length,
       dialogs: this.consoleData.dialogs.length,
       clicks: this.clicks.length,
-      snapshots: this.snapshots.length
+      snapshots: this.snapshots.length,
+      blocked: this.blockedUrls.length
     };
   }
 
@@ -498,6 +574,9 @@ export class ExtractorSession extends EventEmitter {
       counts: this.counts(),
       snapshots: this.snapshots,
       analysisFile: fs.existsSync(path.join(this.dir, 'analysis.json')) ? 'analysis.json' : null,
+      exports: { ...this.exportsWritten },
+      viewport: this.viewport,
+      emulation: describeEmulation(this.emulation),
       error: this.lastError
     };
   }

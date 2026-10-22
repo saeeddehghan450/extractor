@@ -1,6 +1,7 @@
 // Thin wrapper around the dashboard API
 import type {
-  Analysis, Config, ConfigPatch, FileEntry, LiveState, Meta, NetworkRequest, NetworkResponse, SessionSummary, SnapshotSummary
+  Analysis, Config, ConfigPatch, EmulationOptions, FileEntry, LiveState, Meta, NetworkRequest, NetworkResponse, SearchResult,
+  SessionSummary, SnapshotSummary
 } from './types.js';
 
 async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
@@ -34,12 +35,14 @@ export const api = {
 
   session: () => request<SessionSummary | null>('GET', '/api/session'),
   liveState: () => request<LiveState | null>('GET', '/api/session/live'),
-  start: (body: { url?: string; headless?: boolean }) => request<SessionSummary>('POST', '/api/session/start', body),
+  start: (body: { url?: string; headless?: boolean; emulation?: Partial<EmulationOptions> }) => request<SessionSummary>('POST', '/api/session/start', body),
   snapshot: () => request<SnapshotSummary>('POST', '/api/session/snapshot', {}),
   stop: () => request<SessionSummary>('POST', '/api/session/stop', {}),
   input: (body: InputAction) => request<{ ok: boolean; url: string | null }>('POST', '/api/session/input', body),
   liveRequest: (id: string) =>
     request<{ request: NetworkRequest | null; response: NetworkResponse | null }>('GET', `/api/session/request/${encodeURIComponent(id)}`),
+
+  liveHarUrl: () => '/api/session/har',
 
   sessions: () => request<SessionSummary[]>('GET', '/api/sessions'),
   savedSession: (id: string) => request<SessionSummary>('GET', `/api/sessions/${sid(id)}`),
@@ -47,6 +50,10 @@ export const api = {
   files: (id: string) => request<FileEntry[]>('GET', `/api/sessions/${sid(id)}/files`),
   fileUrl: (id: string, path: string, download = false) =>
     `/api/sessions/${sid(id)}/file?path=${encodeURIComponent(path)}${download ? '&download=1' : ''}`,
+  reportUrl: (id: string, lang: string, download = false) =>
+    `/api/sessions/${sid(id)}/report?lang=${encodeURIComponent(lang)}${download ? '&download=1' : ''}`,
+  search: (id: string, q: string, opts: { regex?: boolean; caseSensitive?: boolean } = {}) =>
+    request<SearchResult>('GET', `/api/sessions/${sid(id)}/search?q=${encodeURIComponent(q)}${opts.regex ? '&regex=1' : ''}${opts.caseSensitive ? '&case=1' : ''}`),
   async json<T = Analysis>(id: string, path: string): Promise<T> {
     const res = await fetch(api.fileUrl(id, path));
     if (!res.ok) throw new Error(`${path}: ${res.status}`);

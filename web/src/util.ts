@@ -1,6 +1,6 @@
 import { icon, hydrateIcons } from './icons.js';
 import { t, fmtNumber } from './i18n.js';
-import type { SessionStatus } from './types.js';
+import type { SessionStatus, SessionSummary } from './types.js';
 
 /** querySelector that assumes the element exists (all selectors target our own markup). */
 export function $<T extends Element = HTMLElement>(sel: string, root: ParentNode = document): T {
@@ -115,4 +115,15 @@ export function debounce<A extends unknown[]>(fn: (...args: A) => void, ms = 200
 /** Value of the input that fired an event. */
 export function inputValue(e: Event): string {
   return (e.target as HTMLInputElement).value;
+}
+
+/** Device / network pills for a session (nothing for a plain desktop session). */
+export function emulationPills(s: SessionSummary): string {
+  const e = s.emulation;
+  if (!e) return '';
+  const pills: string[] = [];
+  if (e.device !== 'desktop') pills.push(`<span class="pill info">${esc(e.deviceLabel)}</span>`);
+  if (e.network !== 'none') pills.push(`<span class="pill warn">${esc(t('netp.' + e.network))}</span>`);
+  if (e.blockPatterns.length) pills.push(`<span class="pill">${icon('x')}${fmtNumber(e.blockPatterns.length)}</span>`);
+  return pills.length ? `<span class="pills">${pills.join('')}</span>` : '';
 }

@@ -13,6 +13,15 @@ npm run extract                                  # uses targetUrl from config.js
 npm run extract -- --url https://example.com
 npm run extract -- --url https://example.com --headless --duration 30
 ```
+Emulation flags:
+```bash
+--device <name>            # desktop, iphone-15, iphone-15-pro-max, iphone-se, pixel-7, galaxy-s9, ipad, ipad-pro-11, galaxy-tab-s4
+--network <preset>         # none, fast-4g, slow-4g, slow-3g, offline
+--user-agent "<ua>"
+--header "Name: value"     # repeatable
+--block <pattern>          # repeatable; plain text = URL contains, * = whole-URL wildcard
+--list-devices
+```
 While running: `s` = manual snapshot, `q` / Ctrl+C = finish & save. Closing the browser also finishes.
 
 ### Collectors

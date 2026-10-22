@@ -1,6 +1,6 @@
 {
   "name": "ultimate-devtools-extractor",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "Ultimate DevTools Extractor - TypeScript + Playwright + CDP, with a web dashboard",
   "main": "dist/server/server.js",
   "scripts": {
