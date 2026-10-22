@@ -12,6 +12,7 @@ export interface SessionCounts {
   dialogs: number;
   clicks: number;
   snapshots: number;
+  blocked?: number;
 }
 
 export interface SnapshotSummary {
@@ -43,7 +44,28 @@ export interface SessionSummary {
   counts: SessionCounts;
   snapshots: SnapshotSummary[];
   analysisFile: string | null;
+  exports?: { har: string | null; report: string | null };
+  viewport?: { width: number; height: number } | null;
+  emulation?: EmulationInfo;
   error: string | null;
+}
+
+export interface EmulationInfo {
+  device: string;
+  deviceLabel: string;
+  network: string;
+  networkLabel: string;
+  userAgent: string | null;
+  extraHeaders: string[];
+  blockPatterns: string[];
+}
+
+export interface EmulationOptions {
+  device: string;
+  network: string;
+  userAgent?: string;
+  extraHeaders?: Record<string, string>;
+  blockPatterns?: string[];
 }
 
 export interface CollectorDefinition {
@@ -65,6 +87,9 @@ export interface Meta {
   presets: Preset[];
   outputDir: string;
   forceHeadless: boolean;
+  devices: { key: string; label: string }[];
+  networks: { key: string; label: string }[];
+  version: string;
 }
 
 export interface Config {
@@ -75,6 +100,7 @@ export interface Config {
   viewport: { width: number; height: number };
   performanceTraceMs: number;
   port: number;
+  emulation: EmulationOptions;
   collectors: Record<string, { enabled: boolean; description: string }>;
 }
 
@@ -85,7 +111,28 @@ export interface ConfigPatch {
   executablePath?: string;
   viewport?: { width: number; height: number };
   performanceTraceMs?: number;
+  emulation?: Partial<EmulationOptions>;
   collectors?: Record<string, boolean>;
+}
+
+export type MatchKind = 'url' | 'request' | 'response' | 'console' | 'cookie' | 'storage' | 'source';
+
+export interface SearchMatch {
+  kind: MatchKind;
+  title: string;
+  where: string;
+  snippet: string;
+  start: number;
+  end: number;
+  requestId?: string;
+  file?: string;
+}
+
+export interface SearchResult {
+  query: string;
+  matches: SearchMatch[];
+  truncated: boolean;
+  error?: string;
 }
 
 export interface CompactResponse {

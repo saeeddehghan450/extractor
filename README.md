@@ -76,6 +76,35 @@ Notes:
 - When you upgrade `playwright` in `package.json`, change `PLAYWRIGHT_VERSION` in the
   `Dockerfile` to the same version.
 
+## Emulation, exports and search
+
+**Device & network emulation** — under *Advanced* on the start screen (or `--device`, `--network`
+on the command line):
+
+| Option | Values |
+|--------|--------|
+| Device | Desktop, iPhone 15, iPhone 15 Pro Max, iPhone SE, Pixel 7, Galaxy S9+, iPad (gen 7), iPad Pro 11, Galaxy Tab S4 (viewport, touch, pixel ratio and User-Agent) |
+| Network | No throttling, Fast 4G, Slow 4G, Slow 3G, Offline (same values as Chrome DevTools) |
+| User-Agent | any string, overrides the device's |
+| Extra headers | e.g. `Authorization: Bearer …` — sent with every request |
+| Block URLs | one pattern per line: plain text = "URL contains", with `*` = whole-URL pattern (`*.png`, `https://*/ads/*`). Blocked requests are recorded as failed (`ERR_BLOCKED_BY_CLIENT`) |
+
+The options are remembered in `config.json` (`emulation`) for the next session.
+
+**Exports** — written when a session finishes:
+
+- `network/network.har` — HAR 1.2 with full response bodies; import it in Chrome DevTools
+  (Network → *Import HAR*), Firefox, Charles, Fiddler, Insomnia… A live HAR of a running session
+  can be downloaded from the dashboard at any time.
+- `report.html` — a single self-contained report (summary, findings, embedded screenshots,
+  console errors, failed requests, request list) to share or print. The dashboard generates it
+  on demand in Persian or English.
+
+**Search** — the *Search* tab of a saved session searches request URLs, request/response
+headers, post data, response bodies, console messages, cookies, local/session storage and the
+downloaded JS/CSS sources. Plain text or regex, optionally case-sensitive; useful for finding
+API keys, tokens or where a value comes from.
+
 ## Dashboard
 
 | Page | What it does |
@@ -121,6 +150,8 @@ output/<date>-<time>-<host>-<id>/
 ├── console/console.json
 ├── elements/elements.json
 ├── ...
+├── report.html             # standalone HTML report
+├── network/network.har     # HAR export
 ├── snapshots/
 │   ├── 001-click/          # snapshot.json, screenshot.png, page.html
 │   ├── 002-manual/
@@ -141,6 +172,9 @@ the latest snapshot; every individual snapshot is kept in `snapshots/`.
 # extract without the dashboard (keys: s = snapshot, q = finish)
 npm run extract -- --url https://example.com
 npm run extract -- --url https://example.com --headless --duration 30
+npm run extract -- --url https://example.com --device iphone-15 --network slow-3g \
+  --header "Authorization: Bearer TOKEN" --block google-analytics --block "*.mp4"
+npm run extract -- --list-devices                # device and network preset names
 
 # manage collectors
 npm run collectors list
@@ -206,6 +240,10 @@ src/
 ├── core/
 │   ├── session.ts          # session lifecycle, snapshots, output, remote control
 │   ├── sessionStore.ts     # reading saved sessions
+│   ├── emulation.ts        # devices, throttling, UA / headers, URL blocking
+│   ├── har.ts              # HAR 1.2 export
+│   ├── report.ts           # standalone HTML report
+│   ├── search.ts           # full-text search inside a session
 │   └── pageScript.ts       # injected script: click tracking, canvas context tracking
 ├── collectors/             # one module per collector + registry.ts
 ├── server/server.ts        # dashboard HTTP API + live events (SSE), no extra dependencies

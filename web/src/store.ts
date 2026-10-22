@@ -17,6 +17,7 @@ export interface EventMap {
   'snapshot-start': { seq: number; reason: SnapshotReason };
   snapshot: SnapshotSummary;
   navigated: { url: string };
+  blocked: { url: string };
   counts: { id: string; counts: SessionCounts };
 }
 export type EventType = keyof EventMap;

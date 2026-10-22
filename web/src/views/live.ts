@@ -4,8 +4,9 @@ import { t, fmtNumber, fmtTime } from '../i18n.js';
 import { state, on, onAny, emit } from '../store.js';
 import type { EventType } from '../store.js';
 import type { InputAction } from '../api.js';
-import type { NetworkRow, SessionSummary, ViewContext } from '../types.js';
-import { $, $$, esc, errMsg, html, inputValue, toast, openDrawer, fmtBytes, fmtDuration, statusClass, headersTable, debounce, copyText } from '../util.js';
+import type { EmulationOptions, NetworkRow, SessionSummary, ViewContext } from '../types.js';
+
+import { $, $$, emulationPills, esc, errMsg, html, inputValue, toast, openDrawer, fmtBytes, fmtDuration, statusClass, headersTable, debounce, copyText } from '../util.js';
 import { renderJson } from '../jsonView.js';
 
 const NET_TYPES: [string, string][] = [
@@ -57,7 +58,8 @@ export function mount(el: HTMLElement, _params: string[], { setHeader }: ViewCon
 
 function renderStart(el: HTMLElement, finished: SessionSummary | null): () => void {
   const cfg = state.config || { targetUrl: '', headless: false, collectors: {} as Record<string, { enabled: boolean }> };
-  const meta = state.meta || { collectors: [], presets: [], forceHeadless: false };
+  const meta = state.meta || { collectors: [], presets: [], forceHeadless: false, devices: [], networks: [] };
+  const emu: EmulationOptions = state.config?.emulation || { device: 'desktop', network: 'none' };
   const enabled = meta.collectors.filter(c => cfg.collectors[c.name]?.enabled);
 
   html(el, `
@@ -91,6 +93,7 @@ function renderStart(el: HTMLElement, finished: SessionSummary | null): () => vo
         <div class="start-opts">
           <label><span class="switch"><input type="checkbox" id="headless" ${cfg.headless || meta.forceHeadless ? 'checked' : ''} ${meta.forceHeadless ? 'disabled' : ''}><span></span></span>${esc(t('live.headless'))}</label>
         </div>
+        ${advancedOptions(emu, meta)}
       </section>
 
       <div class="card">
@@ -123,7 +126,10 @@ function renderStart(el: HTMLElement, finished: SessionSummary | null): () => vo
     btn.disabled = true;
     btn.innerHTML = `<span class="spinner"></span><span>${esc(t('live.starting'))}</span>`;
     try {
-      const summary = await api.start({ url: url || undefined, headless: $<HTMLInputElement>('#headless', el).checked });
+      const emulation = readAdvancedOptions(el);
+      // remember the advanced options as the new defaults
+      state.config = await api.saveConfig({ emulation });
+      const summary = await api.start({ url: url || undefined, headless: $<HTMLInputElement>('#headless', el).checked, emulation });
       state.session = summary;
       // the status event switches the view; emit it too in case the event was missed
       emit('status', summary);
@@ -137,13 +143,64 @@ function renderStart(el: HTMLElement, finished: SessionSummary | null): () => vo
   return () => {};
 }
 
+function advancedOptions(emu: EmulationOptions, meta: { devices: { key: string; label: string }[]; networks: { key: string; label: string }[] }): string {
+  const headers = Object.entries(emu.extraHeaders || {}).map(([k, v]) => `${k}: ${v}`).join('\n');
+  const open = emu.device !== 'desktop' || emu.network !== 'none' || !!emu.userAgent || !!headers || !!(emu.blockPatterns || []).length;
+  return `
+    <details class="advanced" ${open ? 'open' : ''}>
+      <summary>${icon('settings')}<span>${esc(t('live.advanced'))}</span></summary>
+      <div class="advanced-grid">
+        <div class="field">
+          <label for="emuDevice">${esc(t('emu.device'))}</label>
+          <select class="select" id="emuDevice">${meta.devices.map(d => `<option value="${esc(d.key)}" ${d.key === emu.device ? 'selected' : ''}>${esc(d.label)}</option>`).join('')}</select>
+        </div>
+        <div class="field">
+          <label for="emuNetwork">${esc(t('emu.network'))}</label>
+          <select class="select" id="emuNetwork">${meta.networks.map(n => `<option value="${esc(n.key)}" ${n.key === emu.network ? 'selected' : ''}>${esc(t('netp.' + n.key))}</option>`).join('')}</select>
+        </div>
+        <div class="field span-2">
+          <label for="emuUa">${esc(t('emu.userAgent'))}</label>
+          <input class="input ltr" id="emuUa" spellcheck="false" value="${esc(emu.userAgent || '')}">
+          <span class="hint">${esc(t('emu.userAgent.hint'))}</span>
+        </div>
+        <div class="field">
+          <label for="emuHeaders">${esc(t('emu.headers'))}</label>
+          <textarea class="input textarea ltr" id="emuHeaders" rows="3" spellcheck="false" placeholder="X-Api-Key: …">${esc(headers)}</textarea>
+          <span class="hint">${esc(t('emu.headers.hint'))}</span>
+        </div>
+        <div class="field">
+          <label for="emuBlock">${esc(t('emu.block'))}</label>
+          <textarea class="input textarea ltr" id="emuBlock" rows="3" spellcheck="false" placeholder="google-analytics.com&#10;*.mp4">${esc((emu.blockPatterns || []).join('\n'))}</textarea>
+          <span class="hint">${esc(t('emu.block.hint'))}</span>
+        </div>
+      </div>
+      <p class="hint">${esc(t('emu.remember'))}</p>
+    </details>`;
+}
+
+function readAdvancedOptions(el: HTMLElement): EmulationOptions {
+  const lines = (sel: string) => $<HTMLTextAreaElement>(sel, el).value.split('\n').map(l => l.trim()).filter(Boolean);
+  const extraHeaders: Record<string, string> = {};
+  for (const line of lines('#emuHeaders')) {
+    const i = line.indexOf(':');
+    if (i > 0) extraHeaders[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+  }
+  return {
+    device: $<HTMLSelectElement>('#emuDevice', el).value,
+    network: $<HTMLSelectElement>('#emuNetwork', el).value,
+    userAgent: $<HTMLInputElement>('#emuUa', el).value.trim(),
+    extraHeaders,
+    blockPatterns: lines('#emuBlock')
+  };
+}
+
 // ---------------------------------------------------------------------------
 // running session
 // ---------------------------------------------------------------------------
 
 function renderRunning(el: HTMLElement): () => void {
   const s = state.session!;
-  const vp = state.config?.viewport || { width: 1280, height: 800 };
+  const vp = s.viewport || state.config?.viewport || { width: 1280, height: 800 };
   const ui = { tab: 'network', netType: 'all', netFilter: '', conLevel: 'all', conFilter: '' };
 
   html(el, `
@@ -160,13 +217,15 @@ function renderRunning(el: HTMLElement): () => void {
               <input class="input" id="navUrl" spellcheck="false" value="${esc(s.currentUrl || s.url)}">
             </form>
             <button class="btn sm" id="snapBtn">${icon('camera')}<span>${esc(t('live.snapshot'))}</span></button>
+            <a class="btn sm ghost" href="${api.liveHarUrl()}" download title="${esc(t('live.har'))}">${icon('download')}<span>HAR</span></a>
             <button class="btn sm danger" id="stopBtn">${icon('stop')}<span>${esc(t('live.stop'))}</span></button>
           </div>
-          <div class="viewport" id="viewport" tabindex="0" style="--vp-ratio:${vp.width} / ${vp.height}">
+          <div class="viewport" id="viewport" tabindex="0" style="--vp-ratio:${vp.width} / ${vp.height};--vp-w:${vp.width};--vp-h:${vp.height}">
             <img id="shot" alt="">
             <div class="overlay" id="shotOverlay"><div><span class="spinner"></span><div class="small" style="margin-top:8px">${esc(t('live.preview.loading'))}</div></div></div>
           </div>
-          <div class="browser-foot">${icon('keyboard')}<span>${esc(s.headless ? t('live.preview.hint') : t('live.preview.headed') + ' ' + t('live.preview.hint'))}</span></div>
+          <div class="browser-foot">${icon('keyboard')}<span>${esc(s.headless ? t('live.preview.hint') : t('live.preview.headed') + ' ' + t('live.preview.hint'))}</span>
+            ${emulationPills(s)}</div>
         </div>
 
         <div class="side-col">
@@ -202,6 +261,7 @@ function renderRunning(el: HTMLElement): () => void {
       ['alert', 'stat.errors', c.errors, c.errors ? 'err' : ''],
       ['mouse', 'stat.clicks', c.clicks, ''],
       ['camera', 'stat.snapshots', c.snapshots, 'accent'],
+      ...(c.blocked ? [['x', 'stat.blocked', c.blocked, '']] as typeof items : []),
       ['clock', 'stat.duration', null, '', fmtDuration(Date.now() - started)]
     ];
     html($('#stats', el), items.map(([ic, label, v, cls, text]) => `

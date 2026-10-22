@@ -7,6 +7,7 @@
 import fs from 'fs';
 import path from 'path';
 import { COLLECTORS, isKnownCollector } from '../collectors/registry';
+import { DEFAULT_EMULATION, EmulationOptions, normalizeEmulation } from '../core/emulation';
 
 export interface CollectorConfig {
   enabled: boolean;
@@ -24,6 +25,8 @@ export interface Config {
   performanceTraceMs: number;
   /** Port used by the web dashboard. */
   port: number;
+  /** Default device / network emulation, custom UA / headers and blocked URLs. */
+  emulation: EmulationOptions;
   collectors: Record<string, CollectorConfig>;
 }
 
@@ -33,7 +36,8 @@ const DEFAULTS: Omit<Config, 'collectors'> = {
   slowMo: 0,
   viewport: { width: 1280, height: 800 },
   performanceTraceMs: 3000,
-  port: 4000
+  port: 4000,
+  emulation: DEFAULT_EMULATION
 };
 
 let config: Config | null = null;
@@ -58,6 +62,7 @@ export function normalizeConfig(raw: Partial<Config>): Config {
     ...DEFAULTS,
     ...raw,
     viewport: { ...DEFAULTS.viewport, ...(raw.viewport || {}) },
+    emulation: normalizeEmulation(raw.emulation),
     collectors
   };
 }
@@ -142,7 +147,10 @@ export function setCollectorEnabled(collectorName: string, enabled: boolean): vo
 /**
  * Merge a partial update into the config and persist it.
  */
-export function updateConfig(patch: Partial<Config> & { collectors?: Record<string, Partial<CollectorConfig> | boolean> }): Config {
+export function updateConfig(patch: Partial<Omit<Config, 'emulation'>> & {
+  collectors?: Record<string, Partial<CollectorConfig> | boolean>;
+  emulation?: Partial<EmulationOptions>;
+}): Config {
   const cfg = loadConfig();
   const next: Config = { ...cfg };
 
@@ -163,6 +171,9 @@ export function updateConfig(patch: Partial<Config> & { collectors?: Record<stri
       width: w >= 320 ? Math.round(w) : cfg.viewport.width,
       height: h >= 240 ? Math.round(h) : cfg.viewport.height
     };
+  }
+  if (patch.emulation && typeof patch.emulation === 'object') {
+    next.emulation = normalizeEmulation({ ...cfg.emulation, ...patch.emulation });
   }
   if (patch.collectors) {
     next.collectors = { ...cfg.collectors };

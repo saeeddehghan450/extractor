@@ -2,8 +2,9 @@ import { api } from '../api.js';
 import { icon, COLLECTOR_ICONS } from '../icons.js';
 import { t, fmtNumber, fmtDate, fmtTime } from '../i18n.js';
 import { state } from '../store.js';
-import { $, $$, esc, errMsg, html, inputValue, toast, openDrawer, fmtBytes, fmtDuration, statusClass, statusPill, hostOf, headersTable, debounce } from '../util.js';
-import type { Analysis, CollectorDefinition, ConsoleLine, NetworkResponse, SessionSummary, ViewContext } from '../types.js';
+import { $, $$, emulationPills, esc, errMsg, html, inputValue, toast, openDrawer, fmtBytes, fmtDuration, statusClass, statusPill, hostOf, headersTable, debounce } from '../util.js';
+import type { Analysis, CollectorDefinition, ConsoleLine, NetworkResponse, SearchMatch, SessionSummary, ViewContext } from '../types.js';
+import { getLang } from '../i18n.js';
 import { renderJson, expandAll } from '../jsonView.js';
 
 export function mount(el: HTMLElement, params: string[], ctx: ViewContext): void {
@@ -41,6 +42,7 @@ function mountList(el: HTMLElement, { setHeader }: ViewContext): void {
                 <span class="host">${esc(hostOf(s.url))}</span>
                 ${statusPill(s.status)}
                 ${s.headless ? '<span class="pill">headless</span>' : ''}
+                ${emulationPills(s)}
               </div>
               <div class="url truncate">${esc(s.url)}</div>
               <div class="muted small">${esc(fmtDate(s.startedAt))}${s.endedAt ? ' · ' + esc(fmtDuration(Date.parse(s.endedAt) - Date.parse(s.startedAt))) : ''}</div>
@@ -120,16 +122,20 @@ function mountDetail(el: HTMLElement, id: string, { setHeader }: ViewContext): v
           <div class="row" style="gap:8px;margin-bottom:4px"><a class="btn sm ghost" href="#/sessions">${icon(document.dir === 'rtl' ? 'right' : 'left')}${esc(t('sessions.back'))}</a>${statusPill(summary.status)}</div>
           <h2>${esc(analysis?.elements?.overview?.title || hostOf(summary.url))}</h2>
           <div class="url">${esc(summary.url)}</div>
+          <div class="row" style="gap:6px;margin:4px 0">${emulationPills(summary)}</div>
           <div class="muted small">${esc(t('sessions.started'))}: ${esc(fmtDate(summary.startedAt))}${summary.endedAt ? ` · ${esc(t('sessions.ended'))}: ${esc(fmtDate(summary.endedAt))}` : ''}</div>
         </div>
         <div class="row">
-          ${summary.analysisFile ? `<a class="btn primary" href="${api.fileUrl(id, 'analysis.json', true)}">${icon('download')}${esc(t('sessions.download'))}</a>` : ''}
+          ${summary.analysisFile ? `<a class="btn primary" target="_blank" rel="noopener" href="${api.reportUrl(id, getLang())}">${icon('file')}${esc(t('sessions.report'))}</a>
+            <a class="btn" href="${api.reportUrl(id, getLang(), true)}" title="${esc(t('sessions.reportDownload'))}">${icon('download')}HTML</a>` : ''}
+          ${summary.exports?.har ? `<a class="btn" href="${api.fileUrl(id, summary.exports.har, true)}" title="${esc(t('sessions.har'))}">${icon('download')}HAR</a>` : ''}
+          ${summary.analysisFile ? `<a class="btn" href="${api.fileUrl(id, 'analysis.json', true)}" title="${esc(t('sessions.download'))}">${icon('download')}JSON</a>` : ''}
           <button class="btn danger" id="delBtn">${icon('trash')}${esc(t('common.delete'))}</button>
         </div>
       </div>
       ${summary.error ? `<div class="card" style="border-color:var(--err);margin-bottom:16px;color:var(--err)">${icon('alert')} ${esc(summary.error)}</div>` : ''}
       <div class="tabs" id="dTabs">
-        ${[['overview', 'activity'], ['snapshots', 'camera'], ['network', 'network'], ['console', 'terminal'], ['modules', 'layers'], ['files', 'folder']]
+        ${[['overview', 'activity'], ['snapshots', 'camera'], ['network', 'network'], ['console', 'terminal'], ['search', 'search'], ['modules', 'layers'], ['files', 'folder']]
           .filter(([k]) => analysis || k === 'files' || k === 'overview' || k === 'snapshots')
           .map(([k, ic]) => `<button data-tab="${k}" class="${tab === k ? 'active' : ''}">${icon(ic)}${esc(t('tab.' + k))}</button>`).join('')}
       </div>
@@ -161,6 +167,7 @@ function mountDetail(el: HTMLElement, id: string, { setHeader }: ViewContext): v
     if (tab === 'network') return renderNetwork();
     if (tab === 'console') return renderConsole();
     if (tab === 'modules') return renderModules(modules);
+    if (tab === 'search') return renderSearch();
     if (tab === 'files') void renderFiles();
   };
 
@@ -309,22 +316,94 @@ function mountDetail(el: HTMLElement, id: string, { setHeader }: ViewContext): v
     };
     $('#nb', panel()).onclick = e => {
       const tr = (e.target as Element).closest<HTMLElement>('tr[data-id]');
-      if (!tr) return;
-      const r = reqs.find(x => x.id === tr.dataset.id);
-      if (!r) return;
-      const resp = resps.get(r.id);
-      const body = openDrawer(`${r.method} ${hostOf(r.url)}`, `
-        <pre class="code">${esc(r.url)}</pre>
-        <div><h4>${esc(t('net.request'))} · ${esc(t('net.headers'))}</h4>${headersTable(r.headers)}</div>
-        ${r.postData ? `<div><h4>${esc(t('net.postData'))}</h4><pre class="code">${esc(r.postData)}</pre></div>` : ''}
-        ${resp ? `<div><h4>${esc(t('net.response'))} · ${resp.status} ${esc(resp.statusText || '')}</h4>${headersTable(resp.headers)}</div>
-          ${resp.securityDetails ? `<div><h4>TLS</h4><div id="tls"></div></div>` : ''}
-          <div><div class="row" style="margin-bottom:8px"><h4 style="margin:0">${esc(t('net.body'))}</h4><span class="spacer"></span>
-            ${resp.fullBodyPath ? `<a class="btn sm" target="_blank" href="${api.fileUrl(id, resp.fullBodyPath)}">${icon('external')}${esc(t('net.openFull'))}</a>` : ''}</div>
-            <pre class="code">${esc(resp.bodySnippet ?? '')}</pre></div>` : ''}`);
-      if (resp?.securityDetails) renderJson($('#tls', body), resp.securityDetails, 1);
+      if (tr) showRequest(tr.dataset.id!);
     };
     fill();
+  };
+
+  /** Request / response details of a recorded request in the drawer. */
+  const showRequest = (requestId: string) => {
+    const r = (analysis?.network?.requests || []).find(x => x.id === requestId);
+    if (!r) return;
+    const resp = (analysis?.network?.responses || []).find(x => x.requestId === requestId);
+    const body = openDrawer(`${r.method} ${hostOf(r.url)}`, `
+      <pre class="code">${esc(r.url)}</pre>
+      <div><h4>${esc(t('net.request'))} · ${esc(t('net.headers'))}</h4>${headersTable(r.headers)}</div>
+      ${r.postData ? `<div><h4>${esc(t('net.postData'))}</h4><pre class="code">${esc(r.postData)}</pre></div>` : ''}
+      ${resp ? `<div><h4>${esc(t('net.response'))} · ${resp.status} ${esc(resp.statusText || '')}</h4>${headersTable(resp.headers)}</div>
+        ${resp.securityDetails ? `<div><h4>TLS</h4><div id="tls"></div></div>` : ''}
+        <div><div class="row" style="margin-bottom:8px"><h4 style="margin:0">${esc(t('net.body'))}</h4><span class="spacer"></span>
+          ${resp.fullBodyPath ? `<a class="btn sm" target="_blank" href="${api.fileUrl(id, resp.fullBodyPath)}">${icon('external')}${esc(t('net.openFull'))}</a>` : ''}</div>
+          <pre class="code">${esc(resp.bodySnippet ?? '')}</pre></div>` : ''}`);
+    if (resp?.securityDetails) renderJson($('#tls', body), resp.securityDetails, 1);
+  };
+
+  // --- search ---
+  const searchUi = { q: '', regex: false, caseSensitive: false };
+  const KIND_ICONS: Record<string, string> = {
+    url: 'globe', request: 'network', response: 'network', console: 'terminal', cookie: 'database', storage: 'database', source: 'file'
+  };
+  const renderSearch = () => {
+    html(panel(), `
+      <form class="toolbar" id="sf">
+        <input class="input" id="sq" style="max-width:none;flex:1;min-width:220px" placeholder="${esc(t('search.placeholder'))}" value="${esc(searchUi.q)}" spellcheck="false">
+        <label class="row small" style="gap:6px;cursor:pointer"><input type="checkbox" id="sRegex" ${searchUi.regex ? 'checked' : ''}>${esc(t('search.regex'))}</label>
+        <label class="row small" style="gap:6px;cursor:pointer"><input type="checkbox" id="sCase" ${searchUi.caseSensitive ? 'checked' : ''}>${esc(t('search.case'))}</label>
+        <button class="btn primary sm" type="submit">${icon('search')}${esc(t('search.go'))}</button>
+      </form>
+      <div id="sr"><div class="empty small">${icon('search')}<div>${esc(t('search.hint'))}</div></div></div>`);
+    const form = $<HTMLFormElement>('#sf', panel());
+    form.onsubmit = async e => {
+      e.preventDefault();
+      searchUi.q = $<HTMLInputElement>('#sq', form).value;
+      searchUi.regex = $<HTMLInputElement>('#sRegex', form).checked;
+      searchUi.caseSensitive = $<HTMLInputElement>('#sCase', form).checked;
+      if (!searchUi.q.trim()) return;
+      const out = $('#sr', panel());
+      html(out, `<div class="empty"><span class="spinner"></span></div>`);
+      try {
+        const res = await api.search(id, searchUi.q, { regex: searchUi.regex, caseSensitive: searchUi.caseSensitive });
+        if (res.error) {
+          html(out, `<div class="card" style="color:var(--err)">${esc(res.error)}</div>`);
+          return;
+        }
+        showResults(out, res.matches, res.truncated);
+      } catch (err) {
+        html(out, `<div class="empty">${esc(errMsg(err))}</div>`);
+      }
+    };
+    $<HTMLInputElement>('#sq', form).focus();
+    if (searchUi.q) form.requestSubmit();
+  };
+
+  const showResults = (out: HTMLElement, matches: SearchMatch[], truncated: boolean) => {
+    if (!matches.length) {
+      html(out, `<div class="empty">${icon('search')}<div>${esc(t('search.none'))}</div></div>`);
+      return;
+    }
+    html(out, `
+      <div class="row" style="margin-bottom:10px">
+        <span class="pill accent">${esc(t('search.count', { n: fmtNumber(matches.length) }))}</span>
+        ${truncated ? `<span class="muted small">${esc(t('search.truncated'))}</span>` : ''}
+      </div>
+      <div class="search-results">${matches.map((m, i) => `
+        <div class="search-hit" data-i="${i}">
+          <div class="row" style="gap:8px">
+            <span class="pill">${icon(KIND_ICONS[m.kind] || 'file')}${esc(t('kind.' + m.kind))}</span>
+            <span class="muted small ltr">${esc(m.where)}</span>
+            <span class="spacer"></span>
+            ${m.requestId || m.file ? `<button class="btn sm ghost" data-open="${i}">${icon('eye')}${esc(t('search.open'))}</button>` : ''}
+          </div>
+          ${m.title ? `<div class="hit-title ltr truncate" title="${esc(m.title)}">${esc(m.title)}</div>` : ''}
+          <div class="hit-snippet ltr">${esc(m.snippet.slice(0, m.start))}<mark>${esc(m.snippet.slice(m.start, m.end))}</mark>${esc(m.snippet.slice(m.end))}</div>
+        </div>`).join('')}</div>`);
+    out.onclick = e => {
+      const b = (e.target as Element).closest<HTMLElement>('[data-open]');
+      if (!b) return;
+      const m = matches[Number(b.dataset.open)];
+      if (m.requestId) showRequest(m.requestId);
+      else if (m.file) window.open(api.fileUrl(id, m.file), '_blank', 'noopener');
+    };
   };
 
   // --- console ---

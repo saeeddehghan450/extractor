@@ -1,5 +1,20 @@
 # 📝 CHANGELOG
 
+## 2.3.0 — Emulation, HAR, HTML report and search
+
+### Added
+- Device emulation (9 phone / tablet / desktop profiles), network throttling (Fast 4G, Slow 4G,
+  Slow 3G, Offline), custom User-Agent, extra request headers and URL blocking — in the
+  dashboard (*Advanced* options, remembered in `config.json`) and as CLI flags.
+- HAR 1.2 export (`network/network.har`, with full bodies) and a live HAR download.
+- Standalone HTML report (`report.html`, plus on-demand Persian/English report in the dashboard).
+- Full-text / regex search inside a session (network, bodies, console, storage, sources).
+- Blocked-request counter; device / network badges on sessions.
+- Tests for emulation, blocking, HAR, report, search and the new API endpoints.
+
+### Changed
+- The live preview keeps portrait devices fully on screen.
+
 ## 2.2.0 — Dashboard in TypeScript
 
 ### Changed
