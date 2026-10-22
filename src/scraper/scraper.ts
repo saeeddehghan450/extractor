@@ -29,6 +29,9 @@ export interface Recipe {
 export interface ScrapeResult {
   rows: Record<string, string | null>[];
   pages: number;
+  /** page the extraction started on */
+  startUrl: string;
+  /** page it ended on (differs from startUrl after pagination) */
   url: string;
   stoppedBecause: 'maxPages' | 'noNext' | 'noProgress' | 'singlePage';
 }
@@ -107,6 +110,7 @@ export async function previewRecipe(page: Page, recipe: Recipe, limit = 50): Pro
 /** Extract every page: click the "next" element between pages until maxPages or no progress. */
 export async function runRecipe(page: Page, recipe: Recipe): Promise<ScrapeResult> {
   const rows: Record<string, string | null>[] = [];
+  const startUrl = page.url();
   const maxPages = recipe.nextSelector ? recipe.maxPages ?? 1 : 1;
   let previous = '';
   let pages = 0;
@@ -135,7 +139,7 @@ export async function runRecipe(page: Page, recipe: Recipe): Promise<ScrapeResul
     await page.waitForLoadState('domcontentloaded', { timeout: 30000 }).catch(() => undefined);
     await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => undefined);
   }
-  return { rows, pages, url: page.url(), stoppedBecause };
+  return { rows, pages, startUrl, url: page.url(), stoppedBecause };
 }
 
 // ---------------------------------------------------------------------------
@@ -152,20 +156,65 @@ export function toCSV(rows: Record<string, string | null>[]): string {
   return '﻿' + [columns.map(cell).join(','), ...rows.map(r => columns.map(c => cell(r[c])).join(','))].join('\r\n') + '\r\n';
 }
 
+/** Escape a value for a Markdown table cell (pipes, line breaks, HTML tags). */
+function mdCell(v: string | null | undefined): string {
+  if (v == null) return '';
+  return String(v)
+    .replace(/\\/g, '\\\\')
+    .replace(/\|/g, '\\|')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\r?\n/g, '<br>')
+    .trim();
+}
+
+export interface MarkdownMeta {
+  title?: string;
+  url?: string;
+  pages?: number;
+  scrapedAt?: string;
+}
+
+/** GitHub-flavoured Markdown: optional title and source info, then one table with a row number column. */
+export function toMarkdown(rows: Record<string, string | null>[], meta: MarkdownMeta = {}): string {
+  const columns = Array.from(new Set(rows.flatMap(r => Object.keys(r))));
+  const lines: string[] = [];
+  if (meta.title) lines.push(`# ${mdCell(meta.title)}`, '');
+  const info = [
+    meta.url ? `- Source: ${meta.url}` : '',
+    `- Rows: ${rows.length}${meta.pages ? ` · Pages: ${meta.pages}` : ''}`,
+    meta.scrapedAt ? `- Scraped: ${meta.scrapedAt}` : ''
+  ].filter(Boolean);
+  if (meta.title || meta.url || meta.scrapedAt) lines.push(...info, '');
+  if (!columns.length) {
+    lines.push('_No rows._');
+    return lines.join('\n') + '\n';
+  }
+  lines.push(`| # | ${columns.map(mdCell).join(' | ')} |`);
+  lines.push(`|---:|${columns.map(() => '---').join('|')}|`);
+  rows.forEach((r, i) => lines.push(`| ${i + 1} | ${columns.map(c => mdCell(r[c])).join(' | ')} |`));
+  return lines.join('\n') + '\n';
+}
+
 function slug(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9؀-ۿ]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'scrape';
 }
 
-/** Save rows as JSON + CSV in <sessionDir>/scrapes and return the session-relative paths. */
-export function saveScrape(sessionDir: string, recipe: Recipe, result: ScrapeResult): { json: string; csv: string } {
+export interface SavedScrapeFiles { json: string; csv: string; md: string }
+
+/** Save rows as JSON, CSV and Markdown in <sessionDir>/scrapes and return the session-relative paths. */
+export function saveScrape(sessionDir: string, recipe: Recipe, result: ScrapeResult): SavedScrapeFiles {
   const dir = path.join(sessionDir, 'scrapes');
   ensureDir(dir);
   const base = `${slug(recipe.name || 'scrape')}-${new Date().toISOString().replace(/[:.]/g, '-')}`;
   const jsonFile = path.join(dir, `${base}.json`);
   const csvFile = path.join(dir, `${base}.csv`);
-  fs.writeFileSync(jsonFile, JSON.stringify({ recipe, url: result.url, pages: result.pages, scrapedAt: new Date().toISOString(), rows: result.rows }, null, 2), 'utf-8');
+  const mdFile = path.join(dir, `${base}.md`);
+  const scrapedAt = new Date().toISOString();
+  fs.writeFileSync(jsonFile, JSON.stringify({ recipe, startUrl: result.startUrl, url: result.url, pages: result.pages, scrapedAt, rows: result.rows }, null, 2), 'utf-8');
   fs.writeFileSync(csvFile, toCSV(result.rows), 'utf-8');
-  return { json: relPath(sessionDir, jsonFile), csv: relPath(sessionDir, csvFile) };
+  fs.writeFileSync(mdFile, toMarkdown(result.rows, { title: recipe.name || 'Scrape', url: result.startUrl, pages: result.pages, scrapedAt }), 'utf-8');
+  return { json: relPath(sessionDir, jsonFile), csv: relPath(sessionDir, csvFile), md: relPath(sessionDir, mdFile) };
 }
 
 // ---------------------------------------------------------------------------

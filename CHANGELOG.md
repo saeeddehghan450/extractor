@@ -2,6 +2,9 @@
 
 ## 2.5.0 — Interactive scraper and WebSocket live view
 
+- Markdown output: every scrape is also saved as `.md` (title, source URL, row / page count and a table);
+  *MD* download in the scraper page; `output: "markdown"` on `extractor_scrape` / `extractor_run_recipe`.
+
 ### Added
 - Interactive scraper page: open a site, pick elements on the live view (hover highlight, click to add a
   column), automatic detection of repeating lists with item-relative field selectors, editable columns

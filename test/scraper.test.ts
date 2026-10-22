@@ -109,6 +109,20 @@ test('recipe extraction follows pagination and saves CSV / JSON', async () => {
   assert.ok(csv.startsWith('﻿title,link,price,image,alt\r\n'));
   assert.ok(csv.includes('"Phone C, ""Pro"""'), 'CSV quoting');
   assert.equal(JSON.parse(fs.readFileSync(path.join(session.dir, files.json), 'utf-8')).rows.length, 6);
+  const md = fs.readFileSync(path.join(session.dir, files.md), 'utf-8');
+  assert.ok(md.startsWith('# Phones\n'));
+  assert.ok(md.includes('- Rows: 6 · Pages: 2'));
+  assert.ok(md.includes(`- Source: ${site.url}products\n`), 'source is the first page');
+  assert.ok(result.url.includes('page=2'));
+  assert.ok(md.includes('| # | title | link | price | image | alt |\n|---:|---|---|---|---|---|\n'));
+  assert.ok(md.includes('| 3 | Phone C, "Pro" |'));
+  assert.ok(md.includes('| 6 | گوشی F |'));
+  assert.equal(md.trim().split('\n').filter(l => /^\| \d+ \|/.test(l)).length, 6);
+
+  // markdown cells never break the table or render HTML
+  const tricky = m.scraper.toMarkdown([{ a: 'x | y', b: 'line1\nline2', c: '<b>bold</b>', d: null }]);
+  assert.ok(tricky.includes('| 1 | x \\| y | line1<br>line2 | &lt;b&gt;bold&lt;/b&gt; |  |'), tricky);
+  assert.equal(m.scraper.toMarkdown([]).trim(), '_No rows._');
 
   // invalid recipes are rejected with a clear message
   assert.throws(() => m.scraper.normalizeRecipe({ fields: [] }), /at least one field/);
@@ -132,6 +146,15 @@ test('recipe extraction follows pagination and saves CSV / JSON', async () => {
   })).text);
   assert.equal(adhoc.rows, 3);
   assert.equal(adhoc.data.length, 2);
+  assert.ok(adhoc.files.md.endsWith('.md'));
+
+  // markdown answer for models
+  await session.navigate(`${site.url}products`);
+  const mdOut = await m.callTool('extractor_scrape', {
+    itemSelector: 'li.product', fields: [{ name: 'name', selector: 'a.title' }, { name: 'price', selector: 'span.price' }], output: 'markdown'
+  });
+  assert.ok(!mdOut.isError, mdOut.text);
+  assert.ok(mdOut.text.includes('| # | name | price |\n|---:|---|---|\n| 1 | Phone A | $100 |'), mdOut.text);
 });
 
 test('WebSocket live view: frames, input, picking, origin check', { timeout: 60000 }, async () => {
@@ -223,6 +246,9 @@ test('scraper HTTP API: count, preview, run, recipes', async () => {
     assert.equal(run.rows.length, 6);
     const csv = await fetch(`${base}/api/sessions/${run.sessionId}/file?path=${encodeURIComponent(run.files.csv)}`);
     assert.equal(csv.status, 200);
+    const md = await fetch(`${base}/api/sessions/${run.sessionId}/file?path=${encodeURIComponent(run.files.md)}`);
+    assert.equal(md.headers.get('content-type'), 'text/markdown; charset=utf-8');
+    assert.match(await md.text(), /^# API test\n/);
 
     assert.equal((await post('/api/scraper/recipes', { recipe })).status, 200);
     const list = await (await fetch(`${base}/api/scraper/recipes`)).json() as any[];

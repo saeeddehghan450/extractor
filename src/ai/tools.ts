@@ -23,7 +23,7 @@ import { ExtractorSession, packageVersion } from '../core/session';
 import { listSessions, sessionDir } from '../core/sessionStore';
 import { readJSON, writeJSON } from '../utils/fileUtils';
 import { PRESETS, isPresetName } from '../utils/presets';
-import { Recipe, getRecipe, listRecipes, normalizeRecipe, runRecipe, saveScrape } from '../scraper/scraper';
+import { Recipe, getRecipe, listRecipes, normalizeRecipe, runRecipe, saveScrape, toMarkdown } from '../scraper/scraper';
 
 export interface ToolImage {
   /** base64, without the data: prefix */
@@ -228,6 +228,17 @@ function getPath(obj: any, dotted?: string): unknown {
 // ---------------------------------------------------------------------------
 // tools
 // ---------------------------------------------------------------------------
+
+const outputArg = z.enum(['json', 'markdown']).optional()
+  .describe('Format of the rows in the answer: json (default) or a markdown table (shorter, easy to read)');
+
+/** Scrape answer: summary as JSON, rows as JSON or as a Markdown table. */
+function scrapeOutput(summary: Record<string, unknown>, rows: Record<string, string | null>[], format: 'json' | 'markdown' | undefined, title?: string, url?: string): ToolOutput {
+  if (format === 'markdown') {
+    return { text: clip(`${JSON.stringify(summary, null, 2)}\n\n${toMarkdown(rows, { title: title || 'Scrape', url })}`, 60000) };
+  }
+  return out({ ...summary, data: rows }, 60000);
+}
 
 const deviceKeys = Object.keys(DEVICE_PRESETS) as [string, ...string[]];
 const networkKeys = Object.keys(NETWORK_PRESETS) as [string, ...string[]];
@@ -654,7 +665,8 @@ export const TOOLS: ExtractorTool[] = [
       nextSelector: z.string().optional().describe('Element to click for the next page'),
       maxPages: z.number().int().min(1).max(100).optional(),
       name: z.string().optional().describe('Name for the saved files'),
-      maxRows: z.number().int().min(1).max(5000).optional().describe('Rows to return in the answer (default 100; all rows are saved)')
+      maxRows: z.number().int().min(1).max(5000).optional().describe('Rows to return in the answer (default 100; all rows are saved)'),
+      output: outputArg
     }),
     readOnly: false,
     async run(a) {
@@ -662,8 +674,8 @@ export const TOOLS: ExtractorTool[] = [
       const recipe = normalizeRecipe({ ...a, fields: a.fields.map(f => ({ ...f, extract: f.extract || 'text' })) });
       const result = await runRecipe(page, recipe);
       const files = saveScrape(session.dir, recipe, result);
-      const max = a.maxRows ?? 100;
-      return out({ rows: result.rows.length, pages: result.pages, stoppedBecause: result.stoppedBecause, files, data: result.rows.slice(0, max) }, 60000);
+      const summary = { rows: result.rows.length, pages: result.pages, stoppedBecause: result.stoppedBecause, files };
+      return scrapeOutput(summary, result.rows.slice(0, a.maxRows ?? 100), a.output, recipe.name, result.startUrl);
     }
   }),
 
@@ -688,7 +700,8 @@ export const TOOLS: ExtractorTool[] = [
       name: z.string(),
       url: z.string().optional().describe('Page to scrape (default: the page the recipe was made on)'),
       maxPages: z.number().int().min(1).max(100).optional(),
-      maxRows: z.number().int().min(1).max(5000).optional()
+      maxRows: z.number().int().min(1).max(5000).optional(),
+      output: outputArg
     }),
     readOnly: false,
     async run(a) {
@@ -707,7 +720,8 @@ export const TOOLS: ExtractorTool[] = [
       if (!page) throw new ControllerError(409, 'The session has no open page');
       const result = await runRecipe(page, recipe);
       const files = saveScrape(session.dir, recipe, result);
-      return out({ recipe: recipe.name, url: result.url, rows: result.rows.length, pages: result.pages, files, data: result.rows.slice(0, a.maxRows ?? 100) }, 60000);
+      const summary = { recipe: recipe.name, url: result.url, rows: result.rows.length, pages: result.pages, files };
+      return scrapeOutput(summary, result.rows.slice(0, a.maxRows ?? 100), a.output, recipe.name, result.startUrl);
     }
   }),
   defineTool({

@@ -47,7 +47,7 @@ export const api = {
   scraperPreview: (recipe: ScrapeRecipe) =>
     request<{ rows: Record<string, string | null>[]; url: string }>('POST', '/api/scraper/preview', { recipe }),
   scraperRun: (recipe: ScrapeRecipe) =>
-    request<{ rows: Record<string, string | null>[]; pages: number; url: string; stoppedBecause: string; sessionId: string; files: { json: string; csv: string } | null }>('POST', '/api/scraper/run', { recipe }),
+    request<{ rows: Record<string, string | null>[]; pages: number; startUrl: string; url: string; stoppedBecause: string; sessionId: string; files: { json: string; csv: string; md: string } | null }>('POST', '/api/scraper/run', { recipe }),
   scraperCount: (selector: string, itemSelector?: string) =>
     request<{ count: number; valid: boolean }>('POST', '/api/scraper/count', { selector, itemSelector }),
   recipes: () => request<(ScrapeRecipe & { updatedAt: string })[]>('GET', '/api/scraper/recipes'),

@@ -34,6 +34,24 @@ function toCSV(rows: Rows): string {
   return '﻿' + [cols.map(cell).join(','), ...rows.map(r => cols.map(c => cell(r[c])).join(','))].join('\r\n') + '\r\n';
 }
 
+/** GitHub-flavoured Markdown table (same format as the server's .md files). */
+function toMarkdown(rows: Rows, title: string, url?: string): string {
+  const cols = Array.from(new Set(rows.flatMap(r => Object.keys(r))));
+  const cell = (v: unknown) => (v == null ? '' : String(v))
+    .replace(/\\/g, '\\\\')
+    .replace(/\|/g, '\\|')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\r?\n/g, '<br>')
+    .trim();
+  const lines = [`# ${cell(title)}`, ''];
+  if (url) lines.push(`- Source: ${url}`);
+  lines.push(`- Rows: ${rows.length}`, `- Scraped: ${new Date().toISOString()}`, '');
+  lines.push(`| # | ${cols.map(cell).join(' | ')} |`, `|---:|${cols.map(() => '---').join('|')}|`);
+  rows.forEach((r, i) => lines.push(`| ${i + 1} | ${cols.map(c => cell(r[c])).join(' | ')} |`));
+  return lines.join('\n') + '\n';
+}
+
 function download(name: string, content: string, type: string) {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([content], { type }));
@@ -47,7 +65,7 @@ export function mount(el: HTMLElement, _params: string[], { setHeader }: ViewCon
 
   const recipe: ScrapeRecipe = loadDraft();
   let rows: Rows = [];
-  let lastRun: { files: { json: string; csv: string } | null; sessionId: string; pages: number } | null = null;
+  let lastRun: { files: { json: string; csv: string; md: string } | null; sessionId: string; pages: number } | null = null;
   let pickingNext = false;
   let running = !!state.session && ['running', 'starting'].includes(state.session.status);
 
@@ -116,6 +134,7 @@ export function mount(el: HTMLElement, _params: string[], { setHeader }: ViewCon
           <span id="savedFiles" class="row" style="gap:6px"></span>
           <button class="btn sm ghost" type="button" id="dlCsv">${icon('download')}CSV</button>
           <button class="btn sm ghost" type="button" id="dlJson">${icon('download')}JSON</button>
+          <button class="btn sm ghost" type="button" id="dlMd">${icon('download')}MD</button>
         </div>
         <div id="resultsBox"></div>
       </div>
@@ -385,7 +404,8 @@ export function mount(el: HTMLElement, _params: string[], { setHeader }: ViewCon
     const files = $('#savedFiles', el);
     files.innerHTML = lastRun?.files
       ? `<a class="btn sm" href="${api.fileUrl(lastRun.sessionId, lastRun.files.csv, true)}">${icon('download')}${esc(t('scraper.saved'))} CSV</a>
-         <a class="btn sm" href="${api.fileUrl(lastRun.sessionId, lastRun.files.json, true)}">${icon('download')}JSON</a>`
+         <a class="btn sm" href="${api.fileUrl(lastRun.sessionId, lastRun.files.json, true)}">${icon('download')}JSON</a>
+         <a class="btn sm" href="${api.fileUrl(lastRun.sessionId, lastRun.files.md, true)}">${icon('download')}MD</a>`
       : '';
     const box = $('#resultsBox', el);
     if (!rows.length) {
@@ -459,6 +479,7 @@ export function mount(el: HTMLElement, _params: string[], { setHeader }: ViewCon
   const fileBase = () => (recipe.name || 'scrape').replace(/[^\w؀-ۿ-]+/g, '-');
   $('#dlCsv', el).onclick = () => rows.length && download(`${fileBase()}.csv`, toCSV(rows), 'text/csv;charset=utf-8');
   $('#dlJson', el).onclick = () => rows.length && download(`${fileBase()}.json`, JSON.stringify(rows, null, 2), 'application/json');
+  $('#dlMd', el).onclick = () => rows.length && download(`${fileBase()}.md`, toMarkdown(rows, recipe.name || 'Scrape', $<HTMLInputElement>('#openUrl', el).value.trim() || recipe.url), 'text/markdown;charset=utf-8');
 
   // ------------------------------------------------------------ recipes
   const renderRecipes = async () => {

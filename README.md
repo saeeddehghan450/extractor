@@ -17,7 +17,7 @@ Built with TypeScript, Playwright and the Chrome DevTools Protocol (CDP).
 > یا با داکر: `docker compose up -d --build` و سپس باز کردن `http://localhost:4000`
 >
 > برای استخراج داده بدون کدنویسی: در صفحه «اسکرپر تعاملی» سایت را باز کنید، روی تصویر زنده (WebSocket) بخش‌های
-> دلخواه را انتخاب کنید (لیست‌های تکراری خودکار تشخیص داده می‌شوند) و خروجی CSV/JSON بگیرید.
+> دلخواه را انتخاب کنید (لیست‌های تکراری خودکار تشخیص داده می‌شوند) و خروجی CSV، JSON یا Markdown (md) بگیرید.
 >
 > برای اتصال مدل‌های هوش مصنوعی: آدرس MCP یعنی `http://localhost:4000/mcp` را در هر کلاینت MCP (Claude، Cursor،
 > VS Code، Codex …) وارد کنید، یا از صفحه «دستیار هوش مصنوعی» با هر مدل سازگار با OpenAI (پیش‌فرض) یا Anthropic گفتگو کنید.
@@ -125,13 +125,15 @@ no code and no selectors to write.
    (price, image, link…) to add more columns; selectors are made relative to the item, so every row lines
    up even when some items lack a field.
 4. Optional: *Pick on page* the "next page" button and set the number of pages.
-5. **Extract all pages & save** → table preview, `scrapes/<name>-<time>.csv` (UTF-8 with BOM, opens in Excel)
-   and `.json` in the session folder, downloadable from the page.
+5. **Extract all pages & save** → table preview and three files in the session folder, downloadable from
+   the page: `scrapes/<name>-<time>.csv` (UTF-8 with BOM, opens in Excel), `.json` and `.md` (a Markdown
+   table with the source URL, row and page count — ready for GitHub, notes or an LLM prompt).
 
 Every column can be edited: name, what to take (text, link, image/source, attribute, HTML, form value) and
 its CSS selector. Matches are highlighted on the live view in the column's colour. Save the set of columns
 as a **recipe** to run it again later — from the page, or from an AI model through MCP
-(`extractor_run_recipe`, also `extractor_scrape` for ad-hoc extraction). Recipes live in `output/recipes/`.
+(`extractor_run_recipe`, also `extractor_scrape` for ad-hoc extraction; pass `"output": "markdown"` to get the
+rows back as a Markdown table, which is shorter than JSON). Recipes live in `output/recipes/`.
 
 HTTP API: `POST /api/scraper/preview`, `POST /api/scraper/run`, `POST /api/scraper/count`,
 `GET|POST /api/scraper/recipes`, `DELETE /api/scraper/recipes/{name}`.
