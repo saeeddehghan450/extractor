@@ -62,6 +62,14 @@ curl -X POST localhost:4000/api/scraper/run -H 'Content-Type: application/json' 
   -d '{"recipe":{"itemSelector":"li.product","fields":[{"name":"title","selector":"a.title","extract":"text"}],"nextSelector":"a.next","maxPages":5}}'
 ```
 
+### Knowledge graph (Neo4j)
+```bash
+docker compose up -d neo4j                      # official neo4j:2026.10.0-community (Browser: http://localhost:7474)
+NEO4J_URI=bolt://localhost:7687 NEO4J_PASSWORD=extractor-graph npm start
+curl -X POST localhost:4000/api/graph/sync -H 'Content-Type: application/json' -d '{"all":true}'
+curl -X POST localhost:4000/api/graph/query -H 'Content-Type: application/json' -d '{"cypher":"MATCH (d:Domain) RETURN d.name LIMIT 10"}'
+```
+
 ### MCP & AI
 ```bash
 npm run mcp                          # MCP server on stdio

@@ -14,6 +14,7 @@ import { controller } from '../core/controller';
 import {
   countMatches, deleteRecipe, listRecipes, normalizeRecipe, previewRecipe, runRecipe, saveRecipe, saveScrape
 } from '../scraper/scraper';
+import { syncInBackground } from '../graph/sync';
 
 export class ScraperRouteError extends Error {
   constructor(public status: number, message: string) {
@@ -73,6 +74,7 @@ export async function handleScraperRoute(
     const { session, page } = activePage();
     const result = await runRecipe(page, recipe);
     const files = body.save === false ? null : saveScrape(session.dir, recipe, result);
+    if (files) syncInBackground(session.id, 'scrape saved');
     sendJSON(res, 200, { ...result, sessionId: session.id, files });
     return true;
   }

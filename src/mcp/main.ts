@@ -15,6 +15,8 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { createMcpServer } from './server';
 import { handleMcpHttp } from './http';
 import { controller } from '../core/controller';
+import { closeDriver } from '../graph/neo4jClient';
+import { flushSyncs, installAutoSync } from '../graph/sync';
 import { error, info, logToStderr, success } from '../utils/logger';
 
 function parseArgs(argv: string[]) {
@@ -31,11 +33,14 @@ function parseArgs(argv: string[]) {
 
 async function shutdown(code = 0) {
   await controller.stopIfActive().catch(() => undefined);
+  await flushSyncs().catch(() => undefined);
+  await closeDriver();
   process.exit(code);
 }
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  installAutoSync();
   if (args.help) {
     console.log(`DevTools Extractor MCP server
 

@@ -6,6 +6,7 @@ import { $, $$, emulationPills, esc, errMsg, html, inputValue, toast, openDrawer
 import type { Analysis, CollectorDefinition, ConsoleLine, NetworkResponse, SearchMatch, SessionSummary, ViewContext } from '../types.js';
 import { getLang } from '../i18n.js';
 import { renderJson, expandAll } from '../jsonView.js';
+import { askAssistant } from './graph.js';
 
 export function mount(el: HTMLElement, params: string[], ctx: ViewContext): void {
   if (params[0]) return mountDetail(el, params[0], ctx);
@@ -130,6 +131,8 @@ function mountDetail(el: HTMLElement, id: string, { setHeader }: ViewContext): v
             <a class="btn" href="${api.reportUrl(id, getLang(), true)}" title="${esc(t('sessions.reportDownload'))}">${icon('download')}HTML</a>` : ''}
           ${summary.exports?.har ? `<a class="btn" href="${api.fileUrl(id, summary.exports.har, true)}" title="${esc(t('sessions.har'))}">${icon('download')}HAR</a>` : ''}
           ${summary.analysisFile ? `<a class="btn" href="${api.fileUrl(id, 'analysis.json', true)}" title="${esc(t('sessions.download'))}">${icon('download')}JSON</a>` : ''}
+          <button class="btn" id="askBtn">${icon('zap')}${esc(t('sessions.askAi'))}</button>
+          ${summary.analysisFile ? `<button class="btn ghost" id="graphBtn">${icon('share')}${esc(t('sessions.graphSync'))}</button>` : ''}
           <button class="btn danger" id="delBtn">${icon('trash')}${esc(t('common.delete'))}</button>
         </div>
       </div>
@@ -141,6 +144,19 @@ function mountDetail(el: HTMLElement, id: string, { setHeader }: ViewContext): v
       </div>
       <div id="dPanel"></div>
     `);
+    $('#askBtn', el).onclick = () => askAssistant(t('sessions.askAi.prompt', { id, url: summary.url }));
+    el.querySelector<HTMLButtonElement>('#graphBtn')?.addEventListener('click', async ev => {
+      const b = ev.currentTarget as HTMLButtonElement;
+      b.disabled = true;
+      try {
+        const r = await api.graphSync(id);
+        toast(t('sessions.graphSynced', { n: fmtNumber(r.requests) }), 'ok');
+      } catch (e) {
+        toast(errMsg(e), 'err');
+      } finally {
+        b.disabled = false;
+      }
+    });
     $('#delBtn', el).onclick = async () => {
       if (!confirm(t('sessions.delete.confirm'))) return;
       try {

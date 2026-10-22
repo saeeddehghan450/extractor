@@ -12,6 +12,8 @@
 import readline from 'readline';
 import { AgentConfig, AgentEvent, ExtractorAgent } from './agent';
 import { controller } from '../core/controller';
+import { closeDriver } from '../graph/neo4jClient';
+import { flushSyncs, installAutoSync } from '../graph/sync';
 
 const HELP = `DevTools Extractor agent
 
@@ -73,6 +75,7 @@ function printEvent(e: AgentEvent) {
 }
 
 async function main() {
+  installAutoSync();
   const { opts, task, keepSession } = parseArgs(process.argv.slice(2));
   let agent: ExtractorAgent;
   try {
@@ -87,6 +90,8 @@ async function main() {
 
   const finish = async (code: number) => {
     if (!keepSession) await controller.stopIfActive().catch(() => undefined);
+    await flushSyncs().catch(() => undefined);
+    await closeDriver();
     process.exit(code);
   };
   process.on('SIGINT', () => void finish(130));

@@ -14,6 +14,9 @@ import { ExtractorSession, packageVersion } from '../core/session';
 import { ControllerError, controller } from '../core/controller';
 import { RouteError, handleAiRoute } from './aiRoutes';
 import { ScraperRouteError, handleScraperRoute } from './scraperRoutes';
+import { handleGraphRoute } from './graphRoutes';
+import { GraphError } from '../graph/neo4jClient';
+import { flushSyncs, installAutoSync } from '../graph/sync';
 import { attachLiveSocket } from './liveSocket';
 import { DEVICE_PRESETS, NETWORK_PRESETS } from '../core/emulation';
 import { buildHar } from '../core/har';
@@ -30,7 +33,7 @@ import {
   resolveSessionFile,
   sessionDir
 } from '../core/sessionStore';
-import { getCollectorFlags, isHeadlessForced, loadConfig, updateConfig } from '../utils/configManager';
+import { Config, getCollectorFlags, isHeadlessForced, loadConfig, updateConfig } from '../utils/configManager';
 import { PRESETS, applyPreset, isPresetName } from '../utils/presets';
 import { error, info, onLog, success, warn } from '../utils/logger';
 
@@ -205,9 +208,17 @@ function checkOrigin(req: http.IncomingMessage) {
 // API
 // ---------------------------------------------------------------------------
 
+/** The config without secrets (the Neo4j password is replaced by a flag). */
+function publicConfig(cfg: Config) {
+  if (!cfg.neo4j) return cfg;
+  const { password, ...neo4j } = cfg.neo4j;
+  return { ...cfg, neo4j: { ...neo4j, hasPassword: !!password } };
+}
+
 async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, url: URL) {
   checkOrigin(req);
   if (await handleScraperRoute(req, res, url, readBody)) return;
+  if (await handleGraphRoute(req, res, url, readBody)) return;
   const current = controller.current;
   const method = req.method || 'GET';
   const parts = url.pathname.replace(/^\/api\/?/, '').split('/').filter(Boolean).map(decodeURIComponent);
@@ -225,12 +236,12 @@ async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, ur
       version: packageVersion()
     });
   }
-  if (route === 'GET /config') return sendJSON(res, 200, loadConfig());
-  if (route === 'PUT /config') return sendJSON(res, 200, updateConfig(await readBody(req)));
+  if (route === 'GET /config') return sendJSON(res, 200, publicConfig(loadConfig()));
+  if (route === 'PUT /config') return sendJSON(res, 200, publicConfig(updateConfig(await readBody(req))));
   if (method === 'POST' && parts[0] === 'presets' && parts.length === 2) {
     if (!isPresetName(parts[1])) throw new HttpError(404, 'Unknown preset');
     applyPreset(parts[1]);
-    return sendJSON(res, 200, loadConfig());
+    return sendJSON(res, 200, publicConfig(loadConfig()));
   }
 
   // --- live session ---
@@ -418,7 +429,7 @@ export function createServer(): http.Server {
       if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'Method not allowed');
       return handleStatic(res, url.pathname);
     } catch (e) {
-      const status = e instanceof HttpError || e instanceof ControllerError || e instanceof RouteError || e instanceof ScraperRouteError ? e.status : 500;
+      const status = e instanceof HttpError || e instanceof ControllerError || e instanceof RouteError || e instanceof ScraperRouteError || e instanceof GraphError ? e.status : 500;
       const message = (e as Error).message.split('\n')[0];
       if (status >= 500) error(`${req.method} ${url.pathname}: ${message}`);
       if (!res.headersSent) sendJSON(res, status, { error: message });
@@ -426,6 +437,7 @@ export function createServer(): http.Server {
     }
   });
   attachLiveSocket(server);
+  installAutoSync();
   return server;
 }
 
@@ -453,6 +465,7 @@ if (require.main === module) {
     shuttingDown = true;
     warn('Shutting down...');
     await stopCurrentSession().catch(() => undefined);
+    await flushSyncs(2000).catch(() => undefined);
     for (const c of clients) c.end();
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 3000).unref();

@@ -1,5 +1,25 @@
 # 📝 CHANGELOG
 
+## 2.6.0 — Neo4j knowledge graph
+
+### Added
+- Neo4j integration (official `neo4j-driver`, official `neo4j` Docker image): sessions are written into a
+  knowledge graph — sessions, pages, domains (with registrable site), requests, scripts, stylesheets,
+  cookies, console messages, security headers, clicked elements, scrapes and scraped records. Shared
+  entities are merged across sessions; syncing a session again replaces its data.
+- Auto-sync when a session finishes and after each saved scrape; *Sync all sessions* for older ones.
+- AI / MCP tools `extractor_graph_schema`, `extractor_graph_query` (read-only Cypher),
+  `extractor_graph_insight` (11 ready-made analyses) and `extractor_graph_sync` (27 tools in total);
+  the agent's instructions explain when to use the graph.
+- Dashboard *Knowledge graph* page: connection setup, node counts, read-only Cypher console with table and
+  interactive graph views, ready-made insights, *Ask the assistant* / *Analyse with AI* hand-off to the
+  assistant. Session pages get *Analyse with AI* and *Send to graph*.
+- `/api/graph/*` endpoints, `neo4j` service in `docker-compose.yml`, Neo4j tests (run with `NEO4J_TEST_URI`).
+
+### Security
+- Graph queries run in read transactions; `LOAD CSV`, admin procedures and batched writes are refused.
+- The Neo4j password is never returned by `/api/config` or `/api/graph/status`.
+
 ## 2.5.0 — Interactive scraper and WebSocket live view
 
 - Markdown output: every scrape is also saved as `.md` (title, source URL, row / page count and a table);

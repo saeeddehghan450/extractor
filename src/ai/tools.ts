@@ -24,6 +24,9 @@ import { listSessions, sessionDir } from '../core/sessionStore';
 import { readJSON, writeJSON } from '../utils/fileUtils';
 import { PRESETS, isPresetName } from '../utils/presets';
 import { Recipe, getRecipe, listRecipes, normalizeRecipe, runRecipe, saveScrape, toMarkdown } from '../scraper/scraper';
+import { graphStatus, runReadQuery } from '../graph/neo4jClient';
+import { INSIGHTS, runInsight } from '../graph/insights';
+import { GRAPH_SCHEMA, syncAll, syncInBackground, syncSession } from '../graph/sync';
 
 export interface ToolImage {
   /** base64, without the data: prefix */
@@ -674,6 +677,7 @@ export const TOOLS: ExtractorTool[] = [
       const recipe = normalizeRecipe({ ...a, fields: a.fields.map(f => ({ ...f, extract: f.extract || 'text' })) });
       const result = await runRecipe(page, recipe);
       const files = saveScrape(session.dir, recipe, result);
+      syncInBackground(session.id, 'scrape saved');
       const summary = { rows: result.rows.length, pages: result.pages, stoppedBecause: result.stoppedBecause, files };
       return scrapeOutput(summary, result.rows.slice(0, a.maxRows ?? 100), a.output, recipe.name, result.startUrl);
     }
@@ -720,6 +724,7 @@ export const TOOLS: ExtractorTool[] = [
       if (!page) throw new ControllerError(409, 'The session has no open page');
       const result = await runRecipe(page, recipe);
       const files = saveScrape(session.dir, recipe, result);
+      syncInBackground(session.id, 'scrape saved');
       const summary = { recipe: recipe.name, url: result.url, rows: result.rows.length, pages: result.pages, files };
       return scrapeOutput(summary, result.rows.slice(0, a.maxRows ?? 100), a.output, recipe.name, result.startUrl);
     }
@@ -762,7 +767,81 @@ export const TOOLS: ExtractorTool[] = [
       }
       return out({ sessionId: d.id, format: a.format, path: file, bytes: fs.statSync(file).size });
     }
-  })
+  }),
+
+  // -------------------------------------------------------------------------
+  // knowledge graph (Neo4j)
+  // -------------------------------------------------------------------------
+
+  defineTool({
+    name: 'extractor_graph_schema',
+    title: 'Graph schema',
+    description:
+      'Schema of the Neo4j knowledge graph built from the recorded sessions (node labels, properties, relationships) ' +
+      'plus the current node / relationship counts and the ready-made insights. Read this before writing Cypher.',
+    input: z.object({}),
+    readOnly: true,
+    async run() {
+      const status = await graphStatus();
+      const counts = status.connected ? { nodes: status.nodes, relationships: status.relationships } : { error: status.error || 'Neo4j is not configured' };
+      return out(`${GRAPH_SCHEMA}\n\nCounts: ${JSON.stringify(counts)}\n\nInsights (extractor_graph_insight): ${INSIGHTS.map(i => `${i.id} - ${i.description}`).join('\n  ')}`);
+    }
+  }),
+
+  defineTool({
+    name: 'extractor_graph_query',
+    title: 'Query the graph (Cypher)',
+    description:
+      'Run a read-only Cypher query on the Neo4j knowledge graph of all synced sessions and return rows as JSON. ' +
+      'Writes are rejected. Use it for questions that span requests, domains, pages, cookies, scripts, console messages, ' +
+      'clicks and scraped records - across one or many sessions. Use $params for values and LIMIT large results.',
+    input: z.object({
+      cypher: z.string().describe('Read-only Cypher, e.g. MATCH (s:Session)-[c:CONTACTED]->(d:Domain) WHERE c.thirdParty RETURN d.name, sum(c.requests) AS n ORDER BY n DESC LIMIT 20'),
+      params: z.record(z.string(), z.unknown()).optional().describe('Query parameters referenced as $name'),
+      limit: z.number().int().min(1).max(2000).optional().describe('Rows to return (default 200)')
+    }),
+    readOnly: true,
+    async run(a) {
+      return out(await runReadQuery(a.cypher, a.params || {}, { limit: a.limit ?? 200 }));
+    }
+  }),
+
+  defineTool({
+    name: 'extractor_graph_insight',
+    title: 'Graph insight',
+    description:
+      'Run a ready-made graph analysis: ' + INSIGHTS.map(i => i.id).join(', ') + '. Optionally scoped to one session.',
+    input: z.object({
+      id: z.enum(INSIGHTS.map(i => i.id) as [string, ...string[]]),
+      sessionId: z.string().optional().describe('Limit to one session (default: all synced sessions)'),
+      limit: z.number().int().min(1).max(2000).optional()
+    }),
+    readOnly: true,
+    async run(a) {
+      const r = await runInsight(a.id, a.sessionId, a.limit ?? 200);
+      return out({ insight: r.insight, columns: r.columns, rows: r.rows, truncated: r.truncated });
+    }
+  }),
+
+  defineTool({
+    name: 'extractor_graph_sync',
+    title: 'Sync sessions to the graph',
+    description:
+      'Write a session (default: the running one, else the latest saved) or all sessions into Neo4j. ' +
+      'Syncing is idempotent - it replaces the session\'s previous data. Sessions also sync automatically when they finish.',
+    input: z.object({
+      sessionId: sessionIdArg,
+      all: z.boolean().optional().describe('Sync every saved session')
+    }),
+    readOnly: false,
+    async run(a) {
+      if (a.all) {
+        const r = await syncAll();
+        return out({ synced: r.synced.length, failed: r.failed, sessions: r.synced.map(x => x.sessionId) });
+      }
+      return out(await syncSession(a.sessionId));
+    }
+  }),
 ];
 
 export function findTool(name: string): ExtractorTool | undefined {

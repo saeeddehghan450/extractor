@@ -10,8 +10,9 @@ import * as sessions from './views/sessions.js';
 import * as settings from './views/settings.js';
 import * as assistant from './views/assistant.js';
 import * as scraper from './views/scraper.js';
+import * as graph from './views/graph.js';
 
-const routes: Record<string, { mount: MountFn }> = { live, scraper, collectors, sessions, settings, assistant };
+const routes: Record<string, { mount: MountFn }> = { live, scraper, collectors, sessions, graph, settings, assistant };
 let unmount: Unmount | null = null;
 let currentRoute = '';
 

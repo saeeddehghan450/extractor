@@ -14,6 +14,17 @@ export interface CollectorConfig {
   description: string;
 }
 
+export interface Neo4jSettings {
+  enabled?: boolean;
+  uri?: string;
+  user?: string;
+  /** prefer the NEO4J_PASSWORD environment variable */
+  password?: string;
+  database?: string;
+  /** sync every finished session and every saved scrape automatically */
+  autoSync?: boolean;
+}
+
 export interface Config {
   targetUrl: string;
   headless: boolean;
@@ -27,6 +38,8 @@ export interface Config {
   port: number;
   /** Default device / network emulation, custom UA / headers and blocked URLs. */
   emulation: EmulationOptions;
+  /** Neo4j graph database (NEO4J_* environment variables take precedence). */
+  neo4j?: Neo4jSettings;
   /** Optional defaults for the built-in agent (API keys belong in environment variables). */
   ai?: {
     provider?: 'openai' | 'anthropic';
@@ -157,7 +170,8 @@ export function setCollectorEnabled(collectorName: string, enabled: boolean): vo
 /**
  * Merge a partial update into the config and persist it.
  */
-export function updateConfig(patch: Partial<Omit<Config, 'emulation'>> & {
+export function updateConfig(patch: Partial<Omit<Config, 'emulation' | 'neo4j'>> & {
+  neo4j?: Neo4jSettings & { password?: string | null };
   collectors?: Record<string, Partial<CollectorConfig> | boolean>;
   emulation?: Partial<EmulationOptions>;
 }): Config {
@@ -181,6 +195,19 @@ export function updateConfig(patch: Partial<Omit<Config, 'emulation'>> & {
       width: w >= 320 ? Math.round(w) : cfg.viewport.width,
       height: h >= 240 ? Math.round(h) : cfg.viewport.height
     };
+  }
+  if (patch.neo4j && typeof patch.neo4j === 'object') {
+    const n = { ...(cfg.neo4j || {}) };
+    const p = patch.neo4j;
+    if (typeof p.enabled === 'boolean') n.enabled = p.enabled;
+    if (typeof p.autoSync === 'boolean') n.autoSync = p.autoSync;
+    for (const k of ['uri', 'user', 'database'] as const) {
+      if (typeof p[k] === 'string') n[k] = p[k]!.trim() || undefined;
+    }
+    // empty string keeps the stored password, null removes it
+    if (p.password === null) delete n.password;
+    else if (typeof p.password === 'string' && p.password) n.password = p.password;
+    next.neo4j = n;
   }
   if (patch.emulation && typeof patch.emulation === 'object') {
     next.emulation = normalizeEmulation({ ...cfg.emulation, ...patch.emulation });

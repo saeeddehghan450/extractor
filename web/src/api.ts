@@ -27,6 +27,30 @@ export type InputAction =
 
 const sid = (id: string) => encodeURIComponent(id);
 
+export interface GraphStatus {
+  enabled: boolean;
+  connected: boolean;
+  uri: string;
+  user: string;
+  database: string | null;
+  autoSync: boolean;
+  source: 'env' | 'config' | 'none';
+  hasPassword: boolean;
+  version?: string;
+  error?: string;
+  nodes?: Record<string, number>;
+  relationships?: Record<string, number>;
+}
+
+export interface GraphQueryResult {
+  columns: string[];
+  rows: Record<string, unknown>[];
+  truncated: boolean;
+  ms: number;
+}
+
+export interface GraphSyncResult { sessionId: string; requests: number; domains: number; pages: number; records: number; ms: number }
+
 export const api = {
   meta: () => request<Meta>('GET', '/api/meta'),
   config: () => request<Config>('GET', '/api/config'),
@@ -53,6 +77,16 @@ export const api = {
   recipes: () => request<(ScrapeRecipe & { updatedAt: string })[]>('GET', '/api/scraper/recipes'),
   saveRecipe: (recipe: ScrapeRecipe) => request<ScrapeRecipe>('POST', '/api/scraper/recipes', { recipe }),
   deleteRecipe: (name: string) => request<{ ok: boolean }>('DELETE', `/api/scraper/recipes/${encodeURIComponent(name)}`),
+
+  graphStatus: () => request<GraphStatus>('GET', '/api/graph/status'),
+  graphConfig: (body: { enabled?: boolean; uri?: string; user?: string; password?: string; database?: string; autoSync?: boolean }) =>
+    request<GraphStatus>('PUT', '/api/graph/config', body),
+  graphQuery: (cypher: string, params: Record<string, unknown> = {}) => request<GraphQueryResult>('POST', '/api/graph/query', { cypher, params }),
+  graphInsights: () => request<{ id: string; title: string; description: string }[]>('GET', '/api/graph/insights'),
+  graphInsight: (id: string, sessionId?: string) =>
+    request<GraphQueryResult & { cypher: string; insight: { id: string; title: string; description: string } }>('POST', '/api/graph/insights', { id, sessionId }),
+  graphSync: (sessionId?: string) => request<GraphSyncResult>('POST', '/api/graph/sync', { sessionId }),
+  graphSyncAll: () => request<{ synced: GraphSyncResult[]; failed: { sessionId: string; error: string }[] }>('POST', '/api/graph/sync', { all: true }),
 
   sessions: () => request<SessionSummary[]>('GET', '/api/sessions'),
   savedSession: (id: string) => request<SessionSummary>('GET', `/api/sessions/${sid(id)}`),

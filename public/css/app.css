@@ -698,3 +698,19 @@ mark { background: color-mix(in srgb, var(--warn) 35%, transparent); color: inhe
   .scraper-grid { grid-template-columns: 1fr; }
   .scraper-side { position: static; max-height: none; }
 }
+
+/* ---------- knowledge graph ---------- */
+.graph-grid { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; align-items: start; }
+.graph-grid #gAsk { font-family: var(--font); font-size: 14px; }
+.gnode { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; color: var(--text-2); }
+.gnode::before { content: ''; width: 9px; height: 9px; border-radius: 50%; background: var(--c); flex: none; }
+.gcell { max-width: 420px; overflow: hidden; text-overflow: ellipsis; }
+.graph-canvas-wrap { position: relative; height: 560px; border: 1px solid var(--border-soft); border-radius: 12px; background: var(--surface-2); overflow: hidden; }
+.graph-canvas-wrap canvas { width: 100%; height: 100%; display: block; touch-action: none; }
+.graph-tip { position: absolute; display: none; max-width: 280px; padding: 8px 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow); font-size: 12px; pointer-events: none; z-index: 2; word-break: break-all; }
+.graph-tip strong { display: block; margin-bottom: 4px; }
+.graph-legend { position: absolute; bottom: 8px; inset-inline-start: 10px; display: flex; gap: 10px; flex-wrap: wrap; }
+.insight-list { gap: 6px; }
+.insight-btn { display: flex; flex-direction: column; gap: 2px; width: 100%; text-align: start; padding: 9px 11px; border-radius: 10px; border: 1px solid var(--border-soft); background: var(--surface-2); cursor: pointer; }
+.insight-btn:hover, .insight-btn.active { border-color: var(--accent); background: var(--accent-soft); }
+@media (max-width: 1100px) { .graph-grid { grid-template-columns: 1fr; } }

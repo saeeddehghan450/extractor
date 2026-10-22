@@ -48,7 +48,7 @@ The image is based on the official Playwright image (Node.js + Chromium + system
 runs as a non-root user and forces headless mode (a container has no display).
 
 ```bash
-docker compose up -d --build        # dashboard on http://localhost:4000
+docker compose up -d --build        # dashboard on http://localhost:4000 + Neo4j knowledge graph
 docker compose logs -f
 docker compose down                  # keep data;  add -v to delete the data volume
 ```
@@ -81,6 +81,8 @@ Notes:
   you need remote access.
 - When you upgrade `playwright` in `package.json`, change `PLAYWRIGHT_VERSION` in the
   `Dockerfile` to the same version.
+- Compose also starts the official `neo4j:2026.10.0-community` image (see *Knowledge graph*); set
+  `NEO4J_PASSWORD` in a `.env` file to replace the default password `extractor-graph`.
 
 ## Emulation, exports and search
 
@@ -139,6 +141,54 @@ HTTP API: `POST /api/scraper/preview`, `POST /api/scraper/run`, `POST /api/scrap
 `GET|POST /api/scraper/recipes`, `DELETE /api/scraper/recipes/{name}`.
 
 The *Live session* page uses the same WebSocket view.
+
+## Knowledge graph (Neo4j)
+
+Every session can be written into [Neo4j](https://neo4j.com) (official Docker image and the official
+`neo4j-driver`), so you — and the AI agent — can ask questions that span requests, domains, pages, scripts,
+cookies, console messages, clicks and scraped records, across one session or all of them.
+
+```bash
+docker compose up -d                 # starts neo4j:2026.10.0-community next to the dashboard
+# or on its own:
+docker run -d --name neo4j -p 127.0.0.1:7474:7474 -p 127.0.0.1:7687:7687 \
+  -e NEO4J_AUTH=neo4j/change-me -v neo4j-data:/data neo4j:2026.10.0-community
+```
+
+Connect it on the dashboard's **Knowledge graph** page (URI, user, password — stored in `config.json`,
+never sent back to the browser) or with `NEO4J_URI` / `NEO4J_USER` / `NEO4J_PASSWORD` / `NEO4J_DATABASE`.
+With auto-sync on (default) a session is synced when it finishes and after every saved scrape; *Sync all
+sessions* imports older ones. Syncing is idempotent: a session's previous data is replaced.
+
+Graph model:
+
+```
+(Session)-[:STARTED_AT|VISITED]->(Page)-[:ON_DOMAIN]->(Domain {name, site})
+(Session)-[:CONTACTED {requests, bytes, failed, thirdParty}]->(Domain)
+(Session)-[:MADE]->(Request)-[:TO]->(Domain)            (Request)-[:FROM_PAGE]->(Page)
+(Page)-[:LOADS]->(Script|Stylesheet)-[:SERVED_FROM]->(Domain)
+(Session)-[:SAW_COOKIE {secure, httpOnly, ...}]->(Cookie)-[:FOR_DOMAIN]->(Domain)
+(Session)-[:LOGGED]->(ConsoleMessage)-[:FROM_SCRIPT]->(Script)
+(Page)-[:HAS_HEADER|MISSING_HEADER]->(SecurityHeader)
+(Session)-[:CLICKED {seq}]->(Element)-[:ON_PAGE]->(Page)
+(Session)-[:SCRAPED]->(Scrape)-[:HAS_RECORD]->(Record {one property per column})-[:LINKS_TO]->(Page)
+```
+
+The page has a read-only Cypher console (table view and an interactive graph view), eleven ready-made
+insights (third-party and shared domains, failing and slow requests, error hotspots, cookie flags, missing
+security headers, scripts by domain, scraped records, click paths) and an *Ask the assistant* box. Session
+pages have *Analyse with AI* and *Send to graph* buttons.
+
+The agent and every MCP client get four tools: `extractor_graph_schema`, `extractor_graph_query` (read-only
+Cypher), `extractor_graph_insight` and `extractor_graph_sync`. Queries run in read transactions, so the
+database rejects writes; `LOAD CSV` and `dbms.*` / `apoc.*` / `gds.*` procedures are refused as well.
+
+```bash
+curl localhost:4000/api/graph/status
+curl -X POST localhost:4000/api/graph/query -H 'Content-Type: application/json' \
+  -d '{"cypher":"MATCH (s:Session)-[c:CONTACTED]->(d:Domain) WHERE c.thirdParty RETURN d.name, sum(c.requests) AS n ORDER BY n DESC"}'
+curl -X POST localhost:4000/api/graph/insights -H 'Content-Type: application/json' -d '{"id":"shared-domains"}'
+```
 
 ## MCP server & AI models
 
@@ -224,6 +274,10 @@ tool, and the Claude API through its MCP connector (`mcp_servers` + an `mcp_tool
 | `extractor_list_recipes` | List scraping recipes | — | ✓ |
 | `extractor_run_recipe` | Run scraping recipe | `name`, `url`, `maxPages`, `maxRows` |  |
 | `extractor_export` | Export | `sessionId`, `format`, `language` |  |
+| `extractor_graph_schema` | Graph schema | — | ✓ |
+| `extractor_graph_query` | Query the graph (Cypher) | `cypher`, `params`, `limit` | ✓ |
+| `extractor_graph_insight` | Graph insight | `id`, `sessionId`, `limit` | ✓ |
+| `extractor_graph_sync` | Sync sessions to the graph | `sessionId`, `all` |  |
 
 Like Playwright MCP, the page is read through an accessibility snapshot with element refs
 (`extractor_page_snapshot` → `button "Buy now" [ref=e5]` → `extractor_click {"ref": "e5"}`), which works
@@ -412,6 +466,8 @@ Environment variables:
 | `EXTRACTOR_API_TOKEN` | Bearer token required on `/mcp` and `/v1/*` |
 | `EXTRACTOR_ALLOWED_HOSTS` | Extra host names the server answers for (DNS-rebinding protection) |
 | `EXTRACTOR_AI_*`, `OPENAI_*`, `ANTHROPIC_*` | Agent settings, see *Built-in agent* |
+| `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`, `NEO4J_DATABASE` | Knowledge graph connection (overrides the dashboard settings) |
+| `NEO4J_AUTO_SYNC=0` | Do not sync sessions automatically |
 
 The dashboard listens on `127.0.0.1` only; it can drive a browser and read the output folder,
 so do not expose it on a public interface.
@@ -426,6 +482,8 @@ that automatically. Use `npm run dev:web` to recompile the dashboard on every ch
 npm run typecheck    # TypeScript check (server + dashboard)
 npm run dev:web      # recompile the dashboard on change (run next to npm start)
 npm test             # end-to-end tests (real headless Chromium against a local fixture site)
+# Neo4j tests run when a server is given:
+NEO4J_TEST_URI=bolt://127.0.0.1:7687 NEO4J_TEST_PASSWORD=… npm test
 npm run build        # server -> dist/, dashboard -> public/js ; then: npm run start:prod
 ```
 
@@ -446,11 +504,13 @@ src/
 │   ├── server.ts           # dashboard HTTP API + live events (SSE)
 │   ├── aiRoutes.ts         # /mcp, /v1/tools gateway, /api/agent
 │   ├── liveSocket.ts       # /ws/live: screencast frames + input over WebSocket
-│   └── scraperRoutes.ts    # /api/scraper/*
+│   ├── scraperRoutes.ts    # /api/scraper/*
+│   └── graphRoutes.ts      # /api/graph/*
+├── graph/                  # Neo4j: connection + read-only queries, session sync, insights
 ├── mcp/                    # MCP server (stdio + Streamable HTTP)
 ├── scraper/                # interactive scraper: in-page picker, lists, extraction, recipes
 ├── ai/
-│   ├── tools.ts            # the 23 tools (zod schemas), shared by MCP, gateway and agent
+│   ├── tools.ts            # the 27 tools (zod schemas), shared by MCP, gateway and agent
 │   ├── gateway.ts          # OpenAI / Anthropic tool formats
 │   ├── agent.ts            # agent loop: OpenAI-compatible + Anthropic
 │   └── cli.ts              # npm run agent
@@ -460,7 +520,7 @@ src/
 web/
 ├── src/                    # dashboard source (TypeScript, no framework)
 │   ├── app.ts, store.ts, api.ts, types.ts, i18n.ts, ...
-│   └── views/              # live, collectors, sessions, settings
+│   └── views/              # live, scraper, collectors, sessions, graph, assistant, settings
 └── tsconfig.json           # browser build -> public/js
 public/                     # index.html, CSS and the compiled dashboard (public/js is generated)
 test/                       # end-to-end tests and fixture site

@@ -407,5 +407,9 @@ POST ${origin}/v1/tools/extractor_get_overview    body: {}`)}</pre>
     .catch(() => undefined);
 
   render();
+  // a question handed over by another page (graph, session detail)
+  let asked: string | null = null;
+  try { asked = sessionStorage.getItem('dx-ask'); sessionStorage.removeItem('dx-ask'); } catch { /* storage blocked */ }
+  if (asked) void send($('#aiPanel', el), asked);
   return () => { controllerAbort?.abort(); };
 }
