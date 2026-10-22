@@ -93,12 +93,19 @@ export function ScraperView() {
   runningRef.current = running;
   pickingRef.current = pickingNext;
 
+  /**
+   * After "Extract all pages" the table shows every extracted row: the automatic preview (which
+   * the pagination's page changes would trigger) stays off until the recipe changes.
+   */
+  const keepResults = useRef(false);
+
   /** Replace the recipe: persist, re-render, refresh highlights and the preview. */
   const updateRecipe = (next: ScrapeRecipe, opts: { refresh?: boolean } = { refresh: true }) => {
     recipeRef.current = next;
     setRecipeState(next);
     saveDraft(next);
     if (opts.refresh !== false) {
+      keepResults.current = false;
       refreshHighlights();
       schedulePreview();
     }
@@ -141,6 +148,7 @@ export function ScraperView() {
     }
     try {
       const res = await api.scraperPreview(r);
+      if (keepResults.current) return;
       setRows(res.rows);
       setLastRun(null);
     } catch (err) {
@@ -148,7 +156,7 @@ export function ScraperView() {
       toast(errMsg(err), 'err');
     }
   };
-  const schedulePreview = useDebounced(preview, 300);
+  const schedulePreview = useDebounced(() => { if (!keepResults.current) void preview(); }, 300);
 
   // list item count
   useEffect(() => {
@@ -279,6 +287,7 @@ export function ScraperView() {
     const r = recipeRef.current;
     if (!r.fields.length) { toast(t('scraper.fields.empty'), 'err'); return; }
     setRunBusy(true);
+    keepResults.current = true;
     try {
       const res = await api.scraperRun({ ...r, maxPages: r.nextSelector ? r.maxPages || 1 : 1 });
       setRows(res.rows);
@@ -286,6 +295,7 @@ export function ScraperView() {
       toast(t('scraper.done', { rows: fmtNumber(res.rows.length), pages: fmtNumber(res.pages) }), 'ok');
       resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (err) {
+      keepResults.current = false;
       toast(errMsg(err), 'err', 7000);
     } finally {
       setRunBusy(false);
@@ -466,7 +476,7 @@ export function ScraperView() {
 
           <div className="card">
             <div className="row">
-              <button className="btn" type="button" id="previewBtn" onClick={() => void preview()}><Icon name="eye" />{t('scraper.preview')}</button>
+              <button className="btn" type="button" id="previewBtn" onClick={() => { keepResults.current = false; void preview(); }}><Icon name="eye" />{t('scraper.preview')}</button>
               <button className="btn primary" type="button" id="runBtn" disabled={runBusy} onClick={run}>
                 {runBusy ? <><Spinner />{t('scraper.running')}</> : <><Icon name="play" />{t('scraper.run')}</>}
               </button>
