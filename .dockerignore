@@ -1,0 +1,16 @@
+node_modules
+dist
+output
+data
+test
+.git
+.github
+.vscode
+.idea
+*.log
+.env
+.env.*
+Dockerfile
+docker-compose.yml
+.dockerignore
+public/js

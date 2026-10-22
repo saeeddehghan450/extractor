@@ -1,289 +1,227 @@
 # Ultimate DevTools Extractor
 
-A comprehensive browser automation and data extraction tool built with TypeScript and Playwright. Extract and analyze complete browser state including network traffic, console logs, DOM elements, scripts, styles, performance metrics, and much more.
+Extract everything Chrome DevTools can see about a web page — network traffic, console, DOM,
+scripts, styles, storage, security, performance, accessibility, media, WebGL, memory and
+service workers — and browse the results in a web dashboard.
 
-## Features
+Built with TypeScript, Playwright and the Chrome DevTools Protocol (CDP).
 
-### 🔌 13 Modular Collectors
+> **راهنمای سریع (فارسی)**
+>
+> ```bash
+> npm install
+> npm run setup      # نصب Chromium برای Playwright (فقط یک بار)
+> npm start          # اجرای داشبورد روی http://localhost:4000
+> ```
+>
+> یا با داکر: `docker compose up -d --build` و سپس باز کردن `http://localhost:4000`
+>
+> در داشبورد آدرس سایت را وارد کنید و «شروع استخراج» را بزنید. با هر کلیک روی صفحه یک اسنپ‌شات کامل
+> گرفته می‌شود. در پایان «پایان و ذخیره» را بزنید؛ همه نتایج در پوشه `output/` ذخیره می‌شوند و از بخش
+> «نتایج ذخیره‌شده» قابل مشاهده‌اند. رابط کاربری فارسی/انگلیسی و تم تیره/روشن دارد.
 
-Each data collection module can be independently enabled/disabled:
-
-1. **Network** - HTTP requests/responses with headers and bodies
-2. **Console** - Logs, warnings, errors, and browser dialogs
-3. **Elements** - DOM element information and CDP listeners
-4. **Scripts** - JavaScript files and inline scripts
-5. **CSS** - Stylesheets and computed styles
-6. **Application** - Cookies, local storage, session storage, IndexedDB
-7. **Security** - SSL/TLS and security headers
-8. **Performance** - Performance traces and metrics
-9. **Accessibility** - Accessibility tree
-10. **Media** - Audio/video element statistics
-11. **WebGL** - Canvas and WebGL details
-12. **Memory** - Heap snapshots
-13. **Service Worker** - Service worker registration info
-
-### 📁 Module-Based Output
-
-Each collector's data is automatically organized into its own folder:
-```
-output/
-├── network/
-│   ├── network-1763561850014.json
-│   └── click-1763561850014/
-├── console/
-│   └── console-1763561850014.json
-├── elements/
-│   └── elements-1763561850014.json
-├── scripts/
-├── css/
-├── application/
-├── security/
-├── performance/
-├── accessibility/
-├── media/
-├── webgl/
-├── memory/
-├── serviceWorker/
-└── analysis-1763561850014.json (combined analysis)
-```
-
-### ⚙️ Configuration System
-
-Easily control which collectors are active via `config.json`:
-
-```json
-{
-  "targetUrl": "https://www.i2ocr.com/pdf-ocr-persian",
-  "headless": false,
-  "slowMo": 80,
-  "collectors": {
-    "network": { "enabled": true, "description": "..." },
-    "console": { "enabled": true, "description": "..." },
-    ...
-  }
-}
-```
-
-### 🎯 Real-time Click Tracking
-
-- Automatically injects click listeners into pages
-- Captures click event metadata instantly
-- Saves partial snapshots immediately (non-blocking)
-- Runs full data collection in background
-- Prevents blocking of page behavior (e.g., captcha)
-
-## Installation
+## Quick start
 
 ```bash
 npm install
+npm run setup        # downloads Chromium for Playwright (once)
+npm start            # dashboard on http://localhost:4000
 ```
 
-## Usage
+1. Open <http://localhost:4000>.
+2. Enter a URL and press **Start extraction**.
+   - *Headed* (default): a Chromium window opens; interact with it normally.
+   - *Headless*: no window; the page is shown live in the dashboard — click, scroll and type
+     on the preview to control it.
+3. Every click on the page triggers a full snapshot. Press **Snapshot** for a manual one.
+4. Press **Finish & save** (or close the browser window). Results appear under **Saved results**.
 
-### Start Data Collection
+## Docker
+
+The image is based on the official Playwright image (Node.js + Chromium + system libraries),
+runs as a non-root user and forces headless mode (a container has no display).
 
 ```bash
-npm start
+docker compose up -d --build        # dashboard on http://localhost:4000
+docker compose logs -f
+docker compose down                  # keep data;  add -v to delete the data volume
 ```
 
-This will:
-1. Load configuration from `config.json`
-2. Launch a Chromium browser
-3. Navigate to the target URL
-4. Listen for clicks and collect data as you interact
-5. Export all collected data when you close the browser
-
-### Manage Collectors
-
-Use the collector CLI to enable/disable modules:
+Without compose:
 
 ```bash
-# List all collectors and their status
+docker build -t devtools-extractor .
+docker run -d --name extractor --init --shm-size=1g \
+  -p 127.0.0.1:4000:4000 -v extractor-data:/data devtools-extractor
+```
+
+Command line inside the container:
+
+```bash
+docker compose run --rm extractor node dist/main.js --url https://example.com --duration 30
+docker compose run --rm extractor node dist/bin/collector-cli.js preset security
+```
+
+Config and results live in the `/data` volume (`/data/config.json`, `/data/output/`). Download
+results from the dashboard, or copy them out:
+
+```bash
+docker cp devtools-extractor:/data/output ./output
+```
+
+Notes:
+- `--shm-size=1g` (or `shm_size` in compose) prevents Chromium crashes on heavy pages.
+- The port is published on `127.0.0.1` only; put an authenticating reverse proxy in front if
+  you need remote access.
+- When you upgrade `playwright` in `package.json`, change `PLAYWRIGHT_VERSION` in the
+  `Dockerfile` to the same version.
+
+## Dashboard
+
+| Page | What it does |
+|------|--------------|
+| **Live session** | Start a session, live browser preview with remote control, live network table and request inspector, console, server log, clicks/snapshots timeline, live counters |
+| **Collectors** | Enable/disable each of the 13 collectors or apply a preset |
+| **Saved results** | All past sessions: overview with insights (security headers, Web Vitals, a11y issues, storage…), snapshot gallery with screenshots, network & console explorer, JSON tree viewer for every module, file browser and downloads |
+| **Settings** | Default URL, headless, viewport, slow-mo, trace duration, custom Chromium path |
+
+The UI is available in Persian (RTL) and English, with dark and light themes.
+
+## Collectors
+
+| Collector | Kind | Collects |
+|-----------|------|----------|
+| `network` | stream | Every request/response of every tab: headers, post data, body (large bodies saved to disk), status, size, duration, remote address, TLS details |
+| `console` | stream | Console messages, uncaught errors, dialogs (dialogs are dismissed automatically) |
+| `elements` | snapshot | Page overview (title, node counts, forms, headings, meta, iframes) and, for clicks: outerHTML, computed style, matched CSS rules, box model and real event listeners of the element and its ancestors |
+| `scripts` | snapshot | Downloads every external script once, saves inline scripts, detects `sourceMappingURL` |
+| `css` | snapshot | Downloads stylesheets, saves inline styles, stylesheet summary, CSS custom properties |
+| `application` | snapshot | Cookies (incl. HttpOnly), localStorage, sessionStorage, IndexedDB databases & stores, Cache Storage |
+| `security` | snapshot | Secure context, TLS certificate, present/missing security headers, mixed content, cookies with weak flags |
+| `performance` | snapshot | CDP metrics, navigation timing, FCP, LCP, CLS, long tasks, resource summary; a DevTools trace on manual/final snapshots |
+| `accessibility` | snapshot | Full AX tree (saved to disk), role counts, elements without an accessible name |
+| `media` | snapshot | Audio/video playback state and quality |
+| `webgl` | snapshot | Context type of every canvas (tracked without touching the page), extensions, GPU info |
+| `memory` | snapshot | Heap usage and DOM counters; a full `.heapsnapshot` on manual/final snapshots |
+| `serviceWorker` | snapshot | Registrations, controller, running workers |
+
+*Stream* collectors record for the whole session; *snapshot* collectors run on every snapshot.
+The trace (`performance/trace-N.json`) and heap snapshot (`memory/heap-N.heapsnapshot`) can be
+loaded in Chrome DevTools (Performance → *Load profile*, Memory → *Load*).
+
+## Output
+
+Each session gets its own folder:
+
+```
+output/<date>-<time>-<host>-<id>/
+├── session.json            # manifest: status, counts, snapshots
+├── analysis.json           # everything combined
+├── network/network.json    # one folder per enabled collector
+├── console/console.json
+├── elements/elements.json
+├── ...
+├── snapshots/
+│   ├── 001-click/          # snapshot.json, screenshot.png, page.html
+│   ├── 002-manual/
+│   └── 003-final/
+├── responses/              # large response bodies
+├── sources/                # downloaded JS/CSS and inline code
+├── performance/trace-3.json
+├── accessibility/ax-tree-3.json
+└── memory/heap-3.heapsnapshot
+```
+
+Page-state collectors in `analysis.json` / `<collector>/<collector>.json` contain the data of
+the latest snapshot; every individual snapshot is kept in `snapshots/`.
+
+## Command line
+
+```bash
+# extract without the dashboard (keys: s = snapshot, q = finish)
+npm run extract -- --url https://example.com
+npm run extract -- --url https://example.com --headless --duration 30
+
+# manage collectors
 npm run collectors list
-
-# Enable a specific collector
 npm run collectors enable network
-npm run collectors enable console
-
-# Disable a specific collector
 npm run collectors disable memory
-npm run collectors disable webgl
-
-# Toggle a collector on/off
 npm run collectors toggle performance
-
-# Check status of a single collector
-npm run collectors status console
-
-# Enable all collectors
 npm run collectors enable-all
-
-# Disable all collectors
-npm run collectors disable-all
+npm run collectors presets
+npm run collectors preset security      # minimal | performance | security | dom | full
 ```
 
-### Example Workflows
-
-**Minimal Configuration** - Only collect network and console:
-```bash
-npm run collectors disable-all
-npm run collectors enable network
-npm run collectors enable console
-npm run collectors enable elements
-npm start
-```
-
-**Performance Analysis** - Focus on performance metrics:
-```bash
-npm run collectors disable-all
-npm run collectors enable performance
-npm run collectors enable media
-npm run collectors enable webgl
-npm start
-```
-
-**Full Analysis** - Collect everything:
-```bash
-npm run collectors enable-all
-npm start
-```
-
-## Output Structure
-
-### Final Analysis
-- **`analysis-<timestamp>.json`** - Combined analysis containing all enabled collectors' data
-- **`<collector-name>/<collector-name>-<timestamp>.json`** - Individual collector data files
-
-### Click Data
-- **`click-<timestamp>.partial.json`** - Quick snapshot saved immediately on click
-- **`click-<timestamp>.json`** - Full detailed analysis (saved in background)
-- **`click-<timestamp>.html`** - HTML snapshot of the page
-- **`click-<timestamp>.png`** - Screenshot
-- **`<collector-name>/click-<timestamp>/`** - Collector-specific click data
+See [COMMANDS.md](COMMANDS.md) for the full reference.
 
 ## Configuration
 
-Edit `config.json` to customize:
+`config.json` (editable from the dashboard too):
 
 ```json
 {
-  "targetUrl": "https://your-target-url.com",
-  "headless": false,           // Set to true for headless mode
-  "slowMo": 80,                // Slow down browser actions (ms)
-  "collectors": { ... }        // Enable/disable specific collectors
+  "targetUrl": "https://example.com",
+  "headless": false,
+  "slowMo": 0,
+  "viewport": { "width": 1280, "height": 800 },
+  "performanceTraceMs": 3000,
+  "port": 4000,
+  "executablePath": "/optional/path/to/chromium",
+  "collectors": { "network": { "enabled": true, "description": "..." } }
 }
 ```
 
-## Project Structure
+Environment variables:
 
-```
-├── config.json                 # Collector configuration
-├── package.json               # Dependencies and scripts
-├── tsconfig.json             # TypeScript configuration
-├── src/
-│   ├── main.ts               # Main entry point
-│   ├── types.ts              # TypeScript type definitions
-│   ├── bin/
-│   │   └── collector-cli.ts   # CLI for managing collectors
-│   ├── collectors/            # Data collection modules
-│   │   ├── networkCollector.ts
-│   │   ├── consoleCollector.ts
-│   │   ├── elementsCollector.ts
-│   │   ├── scriptsCollector.ts
-│   │   ├── cssCollector.ts
-│   │   ├── applicationCollector.ts
-│   │   ├── securityCollector.ts
-│   │   ├── performanceCollector.ts
-│   │   ├── accessibilityCollector.ts
-│   │   ├── mediaCollector.ts
-│   │   ├── webglCollector.ts
-│   │   ├── memoryCollector.ts
-│   │   └── serviceWorkerCollector.ts
-│   └── utils/
-│       ├── configManager.ts   # Configuration management
-│       ├── cdpClient.ts       # Chrome DevTools Protocol
-│       ├── fileUtils.ts       # File utilities
-│       └── logger.ts          # Logging utilities
-└── output/                    # Generated data (organized by module)
-```
+| Variable | Purpose |
+|----------|---------|
+| `PORT` / `HOST` | Dashboard address (default `127.0.0.1:4000`) |
+| `TARGET_URL` | Default URL for `npm run extract` |
+| `CHROMIUM_PATH` | Use a specific Chromium binary |
+| `EXTRACTOR_CONFIG` | Path of the config file (default `config.json`) |
+| `EXTRACTOR_OUTPUT` | Output folder (default `output`) |
+| `EXTRACTOR_HEADLESS=1` | Force headless mode (set in the Docker image) |
+| `DEBUG=1` | Print debug logs |
 
-## API Reference
+The dashboard listens on `127.0.0.1` only; it can drive a browser and read the output folder,
+so do not expose it on a public interface.
 
-### configManager.ts
+## Development
 
-```typescript
-// Load configuration
-loadConfig(): Config
+Requires Node.js 20+. The whole project is TypeScript: the server runs directly with `tsx` in
+development, and the dashboard (`web/src`) is compiled by `tsc` to `public/js` — `npm start` does
+that automatically. Use `npm run dev:web` to recompile the dashboard on every change.
 
-// Check if collector is enabled
-isCollectorEnabled(collectorName: string): boolean
-
-// Get all enabled collectors
-getEnabledCollectors(): string[]
-
-// Enable/disable collectors
-enableCollector(collectorName: string): void
-disableCollector(collectorName: string): void
-
-// Create module directory
-createModuleDir(outputDir: string, moduleName: string): string
-
-// Ensure all module directories exist
-ensureModuleDirs(outputDir: string): void
-```
-
-## Advanced Usage
-
-### Custom Target URLs
-
-Set via environment variable:
 ```bash
-TARGET_URL=https://example.com npm start
+npm run typecheck    # TypeScript check (server + dashboard)
+npm run dev:web      # recompile the dashboard on change (run next to npm start)
+npm test             # end-to-end tests (real headless Chromium against a local fixture site)
+npm run build        # server -> dist/, dashboard -> public/js ; then: npm run start:prod
 ```
 
-### Programmatic Usage
+Project layout:
 
-```typescript
-import { isCollectorEnabled, enableCollector } from './src/utils/configManager';
-
-// Check if enabled
-if (isCollectorEnabled('network')) {
-  // Handle network collection
-}
-
-// Enable dynamically
-enableCollector('performance');
 ```
-
-## Performance Considerations
-
-- **Network Collector**: Stores response bodies on disk (can use significant space)
-- **Memory Collector**: Heap snapshots can be large; disable if disk space is limited
-- **Performance Traces**: Can be 10-50 MB depending on page activity
-- **slowMo Setting**: Increase for slower systems; decrease for faster collection
-
-## Troubleshooting
-
-### Configuration not loading
-- Ensure `config.json` exists in project root
-- Check JSON syntax is valid
-
-### Collectors not enabled
-- Use `npm run collectors list` to verify status
-- Check that collector name matches exactly (case-sensitive)
-
-### Out of memory
-- Disable memory-intensive collectors (memory, webgl)
-- Enable only required collectors
-
-### Browser not launching
-- Ensure Playwright dependencies are installed: `npm install`
-- Check Chromium is not already running
+src/
+├── core/
+│   ├── session.ts          # session lifecycle, snapshots, output, remote control
+│   ├── sessionStore.ts     # reading saved sessions
+│   └── pageScript.ts       # injected script: click tracking, canvas context tracking
+├── collectors/             # one module per collector + registry.ts
+├── server/server.ts        # dashboard HTTP API + live events (SSE), no extra dependencies
+├── utils/                  # config, presets, CDP helpers, files, logger
+├── bin/collector-cli.ts    # collectors CLI
+└── main.ts                 # command-line extraction
+web/
+├── src/                    # dashboard source (TypeScript, no framework)
+│   ├── app.ts, store.ts, api.ts, types.ts, i18n.ts, ...
+│   └── views/              # live, collectors, sessions, settings
+└── tsconfig.json           # browser build -> public/js
+public/                     # index.html, CSS and the compiled dashboard (public/js is generated)
+test/                       # end-to-end tests and fixture site
+Dockerfile, docker-compose.yml
+```
 
 ## License
 
-MIT
-
-## Author
-
-Saeed Dehghan
+MIT — Saeed Dehghan

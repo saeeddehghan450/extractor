@@ -1,6 +1,6 @@
 /**
  * logger.ts
- * 
+ *
  * Professional colored CLI logging system
  */
 
@@ -22,30 +22,45 @@ export enum LogLevel {
   SUCCESS = 'SUCCESS'
 }
 
+export interface LogEntry {
+  timestamp: string;
+  level: LogLevel;
+  message: string;
+}
+
+type LogListener = (entry: LogEntry) => void;
+const listeners = new Set<LogListener>();
+
+/** Subscribe to log entries (used by the dashboard). Returns an unsubscribe function. */
+export function onLog(listener: LogListener): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+const showDebug = process.env.DEBUG === '1' || process.env.DEBUG === 'true';
+
+const COLORS: Record<LogLevel, string> = {
+  [LogLevel.INFO]: 'blue',
+  [LogLevel.WARN]: 'yellow',
+  [LogLevel.ERROR]: 'red',
+  [LogLevel.DEBUG]: 'gray',
+  [LogLevel.SUCCESS]: 'green'
+};
+
 /**
  * Log a message with a specific level and timestamp
  */
 export function log(level: LogLevel, message: string) {
   const timestamp = new Date().toISOString();
-  switch (level) {
-    case LogLevel.INFO:
-      console.log((chalk ? chalk.blue(`[${timestamp}] [INFO]`) : `[${timestamp}] [INFO]`) + ' ' + message);
-      break;
-    case LogLevel.WARN:
-      console.warn((chalk ? chalk.yellow(`[${timestamp}] [WARN]`) : `[${timestamp}] [WARN]`) + ' ' + message);
-      break;
-    case LogLevel.ERROR:
-      console.error((chalk ? chalk.red(`[${timestamp}] [ERROR]`) : `[${timestamp}] [ERROR]`) + ' ' + message);
-      break;
-    case LogLevel.DEBUG:
-      console.debug((chalk ? chalk.gray(`[${timestamp}] [DEBUG]`) : `[${timestamp}] [DEBUG]`) + ' ' + message);
-      break;
-    case LogLevel.SUCCESS:
-      console.log((chalk ? chalk.green(`[${timestamp}] [SUCCESS]`) : `[${timestamp}] [SUCCESS]`) + ' ' + message);
-      break;
-    default:
-      console.log(`[${timestamp}] [LOG] ${message}`);
+  for (const l of listeners) {
+    try { l({ timestamp, level, message }); } catch { /* ignore listener errors */ }
   }
+  if (level === LogLevel.DEBUG && !showDebug) return;
+
+  const prefix = `[${timestamp}] [${level}]`;
+  const colored = chalk ? chalk[COLORS[level]](prefix) : prefix;
+  const out = level === LogLevel.ERROR ? console.error : level === LogLevel.WARN ? console.warn : console.log;
+  out(colored + ' ' + message);
 }
 
 /**

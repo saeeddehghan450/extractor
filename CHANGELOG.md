@@ -1,3 +1,59 @@
+# 📝 CHANGELOG
+
+## 2.2.0 — Dashboard in TypeScript
+
+### Changed
+- The dashboard source moved from `public/js/*.js` to `web/src/*.ts` and is fully typed
+  (strict mode, shared API types in `web/src/types.ts`). It is compiled by `tsc -p web`
+  to `public/js` (with source maps); the output is not committed.
+- The inline theme/language script of `index.html` became `web/src/boot.ts`.
+- `npm start` compiles the dashboard first; new scripts `build:web` and `dev:web`;
+  `build` and `typecheck` cover both server and dashboard. The Docker image builds it too.
+
+## 2.1.0 — Latest dependencies & Docker
+
+### Changed
+- Dependencies updated to the latest releases: Playwright 1.64.1, TypeScript 7.0.2,
+  @types/node 26.6.5.
+- `ts-node` (unmaintained, incompatible with TypeScript 7) replaced by `tsx` 4.23.15 for
+  `npm start`, `npm run extract`, `npm run collectors` and `npm test`.
+- tsconfig: `moduleResolution: node` was removed in TypeScript 7 → `NodeNext`.
+- `package-lock.json` is now committed (needed for reproducible `npm ci` / Docker builds).
+- Node.js 20+ required (Playwright requirement).
+
+### Added
+- `Dockerfile` (multi-stage, official Playwright image, non-root, healthcheck), `docker-compose.yml`
+  and `.dockerignore`.
+- `EXTRACTOR_HEADLESS=1` forces headless mode; the dashboard locks the headless switch.
+
+### Fixed
+- Page scripts failed under esbuild-based runners (tsx) because of injected `__name` helpers.
+
+## 2.0.0 — Web dashboard & reliable collectors
+
+### Added
+- Web dashboard (`npm start`): live session with browser preview and remote control (click, scroll,
+  type, navigate), live network/console/log panels, request inspector, snapshot timeline,
+  collectors & presets page, saved-results explorer (overview insights, screenshots, JSON viewer,
+  file browser) and settings. Persian (RTL) / English, dark / light theme.
+- Session engine (`src/core/session.ts`): one output folder per session, snapshots on every click,
+  manual snapshots, final snapshot, graceful finish when the browser/tab is closed.
+- Presets in the CLI (`npm run collectors presets`, `npm run collectors preset <name>`).
+- End-to-end tests (`npm test`) with a local fixture site.
+
+### Fixed
+- Final analysis was never written: the process exited as soon as the browser closed.
+- CSS collector navigated the page away (`page.goto` on each stylesheet).
+- Event listeners: CDP was given a `nodeId` as `objectId`; listeners of ancestors are now included.
+- CSS/computed styles: the DOM/CSS domains are now enabled before use.
+- Heap snapshot, service worker and performance trace collectors returned nothing (wrong CDP usage / race).
+- IndexedDB object stores were read asynchronously after the result was returned.
+- WebGL collector created contexts on the page's canvases.
+- Click listener was installed twice; click selectors were not unique.
+- Network collector only watched the first tab and read redirect bodies.
+
+---
+
 # 📝 COMPLETE CHANGELOG
 
 ## Implementation: Collector Activation & Module Organization

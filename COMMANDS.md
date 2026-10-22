@@ -1,113 +1,57 @@
-## COLLECTOR COMMANDS REFERENCE
+## COMMANDS REFERENCE
 
-### View Status
+### Dashboard
 ```bash
-npm run collectors list              # See all collectors and their status
-npm run collectors status <name>     # Check single collector
+npm start                         # http://localhost:4000
+PORT=5000 npm start               # another port
+npm run build && npm run start:prod
 ```
 
-### Enable/Disable
+### Extraction without the dashboard
 ```bash
-npm run collectors enable <name>     # Turn on a collector
-npm run collectors disable <name>    # Turn off a collector
-npm run collectors toggle <name>     # Switch on/off
-npm run collectors enable-all        # Turn on all collectors
-npm run collectors disable-all       # Turn off all collectors
+npm run extract                                  # uses targetUrl from config.json
+npm run extract -- --url https://example.com
+npm run extract -- --url https://example.com --headless --duration 30
+```
+While running: `s` = manual snapshot, `q` / Ctrl+C = finish & save. Closing the browser also finishes.
+
+### Collectors
+```bash
+npm run collectors list              # status of all collectors
+npm run collectors status <name>     # one collector
+npm run collectors enable <name>
+npm run collectors disable <name>
+npm run collectors toggle <name>
+npm run collectors enable-all
+npm run collectors disable-all
+npm run collectors presets           # list presets
+npm run collectors preset <name>     # minimal | performance | security | dom | full
 ```
 
-### Collector Names
+### Collector names
 ```
 network          console          elements         scripts
 css              application      security         performance
-accessibility   media            webgl            memory
+accessibility    media            webgl            memory
 serviceWorker
 ```
 
-### Example Commands
+### Docker
 ```bash
-# Enable just network and console
-npm run collectors disable-all
-npm run collectors enable network
-npm run collectors enable console
-
-# Enable performance analysis
-npm run collectors disable-all
-npm run collectors enable performance
-npm run collectors enable memory
-npm run collectors enable media
-
-# Toggle one collector
-npm run collectors toggle network
-
-# Check specific collector
-npm run collectors status security
-
-# Enable everything
-npm run collectors enable-all
+docker compose up -d --build
+docker compose logs -f
+docker compose run --rm extractor node dist/main.js --url https://example.com --duration 30
+docker compose run --rm extractor node dist/bin/collector-cli.js list
+docker cp devtools-extractor:/data/output ./output
+docker compose down            # add -v to delete the data volume
 ```
 
-### Start Extraction
+### Development
 ```bash
-npm start                           # Start with configured collectors
-TARGET_URL=https://example.com npm start  # Override target URL
+npm run setup       # install Chromium for Playwright
+npm run typecheck
+npm run build:web   # compile the dashboard (web/src -> public/js)
+npm run dev:web     # recompile the dashboard on every change
+npm test
+npm run clean       # remove dist/ and output/
 ```
-
-### Output Location
-```
-output/
-├── network/              # HTTP requests/responses
-├── console/              # Logs and errors
-├── elements/             # DOM elements
-├── scripts/              # JavaScript files
-├── css/                  # Stylesheets
-├── application/          # Storage data
-├── security/             # Security info
-├── performance/          # Metrics
-├── accessibility/        # A11y tree
-├── media/                # Audio/video
-├── webgl/                # Canvas
-├── memory/               # Heap
-├── serviceWorker/        # Service workers
-└── analysis-*.json       # Combined analysis
-```
-
-### Configuration File
-Edit `config.json` to change:
-- `targetUrl`: Website to analyze
-- `headless`: Run in headless mode
-- `slowMo`: Delay between actions (ms)
-- `collectors`: Enable/disable each module
-
-### Quick Presets
-```bash
-# Minimal
-npm run collectors disable-all
-npm run collectors enable network
-npm run collectors enable console
-
-# Performance focused
-npm run collectors disable-all
-npm run collectors enable performance
-npm run collectors enable media
-npm run collectors enable memory
-npm run collectors enable network
-
-# Security focused
-npm run collectors disable-all
-npm run collectors enable security
-npm run collectors enable application
-npm run collectors enable network
-
-# DOM focused
-npm run collectors disable-all
-npm run collectors enable elements
-npm run collectors enable css
-npm run collectors enable scripts
-npm run collectors enable accessibility
-
-# Everything
-npm run collectors enable-all
-```
-
----
-For more info: `node QUICK_START.js`

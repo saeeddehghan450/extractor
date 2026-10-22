@@ -1,65 +1,81 @@
 /**
  * consoleCollector.ts
- * 
- * Collects:
- *  - console logs (log, warn, error, debug, info)
- *  - page errors
- *  - dialogs (alert, confirm, prompt)
+ *
+ * Collects, for every page of a browser context:
+ *  - console logs (log, warn, error, debug, info, ...)
+ *  - uncaught page errors
+ *  - dialogs (alert, confirm, prompt) - they are dismissed so the page never blocks
  */
 
-import { Page } from 'playwright';
-import { ConsoleRecord, PageErrorRecord } from '../types';
+import { BrowserContext, Page } from 'playwright';
+import { ConsoleRecord, DialogRecord, PageErrorRecord } from '../types';
 import { debug } from '../utils/logger';
 
-export function initConsoleCollector(page: Page) {
+export interface ConsoleCollectorEvents {
+  onMessage?: (m: ConsoleRecord) => void;
+  onPageError?: (e: PageErrorRecord) => void;
+  onDialog?: (d: DialogRecord) => void;
+}
+
+function mapType(t: string): ConsoleRecord['type'] {
+  switch (t) {
+    case 'log':
+    case 'error':
+    case 'info':
+    case 'debug':
+    case 'trace':
+      return t;
+    case 'warning':
+      return 'warn';
+    default:
+      return 'other';
+  }
+}
+
+export function initConsoleCollector(context: BrowserContext, events: ConsoleCollectorEvents = {}) {
   const consoleMessages: ConsoleRecord[] = [];
   const pageErrors: PageErrorRecord[] = [];
-  const dialogs: any[] = [];
+  const dialogs: DialogRecord[] = [];
 
-  // Listen to console events
-  page.on('console', msg => {
-    // Map Playwright types to allowed ConsoleRecord types
-    let type: ConsoleRecord['type'];
-    switch (msg.type()) {
-      case 'log':
-      case 'error':
-      case 'info':
-      case 'debug':
-        type = msg.type() as ConsoleRecord['type'];
-        break;
-      case 'warning':
-        type = 'warn';
-        break;
-      default:
-        // Skip unsupported types
-        return;
-    }
-    consoleMessages.push({
-      timestamp: new Date().toISOString(),
-      type,
-      text: msg.text(),
-      location: msg.location ? msg.location() : undefined
+  const attach = (page: Page) => {
+    page.on('console', msg => {
+      const text = msg.text();
+      // Our own injected script stays quiet, but never record its internal markers.
+      if (text.startsWith('[extractor]')) return;
+      const record: ConsoleRecord = {
+        timestamp: new Date().toISOString(),
+        type: mapType(msg.type()),
+        text,
+        location: msg.location()
+      };
+      consoleMessages.push(record);
+      events.onMessage?.(record);
     });
-  });
 
-  // Listen to page errors
-  page.on('pageerror', err => {
-    pageErrors.push({
-      timestamp: new Date().toISOString(),
-      message: err.message,
-      stack: err.stack
+    page.on('pageerror', err => {
+      const record: PageErrorRecord = {
+        timestamp: new Date().toISOString(),
+        message: err.message,
+        stack: err.stack
+      };
+      pageErrors.push(record);
+      events.onPageError?.(record);
     });
-  });
 
-  // Listen to dialogs
-  page.on('dialog', async d => {
-    dialogs.push({
-      timestamp: new Date().toISOString(),
-      type: d.type(),
-      message: d.message()
+    page.on('dialog', async d => {
+      const record: DialogRecord = {
+        timestamp: new Date().toISOString(),
+        type: d.type(),
+        message: d.message()
+      };
+      dialogs.push(record);
+      events.onDialog?.(record);
+      try { await d.dismiss(); } catch { /* already handled */ }
     });
-    try { await d.dismiss(); } catch {}
-  });
+  };
+
+  context.pages().forEach(attach);
+  context.on('page', attach);
 
   debug('Console collector activated');
 

@@ -1,69 +1,69 @@
 /**
  * cssCollector.ts
- * 
- * Collect CSS and computed styles for the clicked element.
- * Includes:
- *  - all loaded CSS files
- *  - computed styles for a specific node
- *  - matched CSS rules
+ *
+ * Collect CSS of the page:
+ *  - external stylesheets (downloaded once per session, without navigating the page)
+ *  - inline <style> blocks
+ *  - document.styleSheets summary (rule counts, media)
+ *  - inline style of the clicked element
  */
 
-import { Page } from 'playwright';
-import { ClickedElementInfo } from '../types';
-import { saveSourceFile } from '../utils/fileUtils';
-import { debug, warn } from '../utils/logger';
+import { CollectorContext } from '../types';
+import { downloadSource, saveInline } from './sourceDownloader';
+import { debug } from '../utils/logger';
 
-export interface CSSInfo {
-  loadedStylesheets: string[];
-  inlineStylesCount: number;
-}
-
-/**
- * Collect all CSS of the page
- */
-export async function collectCSS(page: Page, element?: ClickedElementInfo): Promise<CSSInfo> {
-  const cssInfo: CSSInfo = await page.evaluate(() => {
-    const stylesheets = Array.from(document.querySelectorAll('link[rel="stylesheet"]')).map(link => (link as HTMLLinkElement).href);
-    const inlineCount = Array.from(document.querySelectorAll('style')).length;
-    // If you need to extract computed styles, use Object.keys or Array.from on its properties
-    // Example: const computedStyles = Object.keys(window.getComputedStyle(document.body));
-    return { loadedStylesheets: stylesheets, inlineStylesCount: inlineCount };
-  });
-
-  debug(`External CSS count: ${cssInfo.loadedStylesheets.length}, inline: ${cssInfo.inlineStylesCount}`);
-
-  // Download external CSS and save
-  for (const href of cssInfo.loadedStylesheets) {
-    try {
-      const response = await page.goto(href);
-      if (response) {
-        const txt = await response.text().catch(() => null);
-        if (txt) {
-          saveSourceFile('output/sources', href, txt, 'css');
-          debug(`CSS saved: ${href}`);
-        }
+export async function collectCSS(ctx: CollectorContext): Promise<any> {
+  const dom = await ctx.page.evaluate(() => ({
+    links: Array.from(document.querySelectorAll('link[rel~="stylesheet"]')).map(l => ({
+      href: (l as HTMLLinkElement).href,
+      media: (l as HTMLLinkElement).media || null
+    })),
+    inline: Array.from(document.querySelectorAll('style')).map(s => s.textContent || ''),
+    sheets: Array.from(document.styleSheets).map(sheet => {
+      let rules: number | null = null;
+      try { rules = sheet.cssRules.length; } catch { rules = null; }
+      return { href: sheet.href, media: sheet.media.mediaText || null, disabled: sheet.disabled, rules, crossOriginBlocked: rules === null };
+    }),
+    customProperties: (() => {
+      const style = getComputedStyle(document.documentElement);
+      const out: Record<string, string> = {};
+      for (let i = 0; i < style.length; i++) {
+        const name = style[i];
+        if (name.startsWith('--')) out[name] = style.getPropertyValue(name).trim();
       }
-    } catch (e) {
-      warn(`Failed to download CSS ${href}: ${(e as Error).message}`);
-    }
+      return out;
+    })()
+  }));
+
+  const stylesheets = [];
+  for (const l of dom.links) {
+    const saved = await downloadSource(ctx, l.href, 'css');
+    stylesheets.push({ ...l, savedPath: saved.path, size: saved.size, status: saved.status, error: saved.error });
   }
 
-  // Add computed styles for the clicked element
-  if (element && element.cssSelectorGuess) {
-    try {
-      const computedStyles = await page.$eval(element.cssSelectorGuess, (el: HTMLElement) => {
-        const styles: Record<string, string> = {};
-        for (const prop of Object.keys(el.style)) {
-          styles[prop] = el.style.getPropertyValue(prop);
-        }
-        return styles;
-      });
-      (element as any).computedStylesInline = computedStyles;
-      debug('Computed styles for clicked element collected');
-    } catch (e) {
-      warn(`Failed to get computed styles for clicked element: ${(e as Error).message}`);
-    }
+  const inlineStyles = dom.inline
+    .filter(c => c.trim().length > 0)
+    .map(c => ({ size: c.length, preview: c.trim().slice(0, 200), savedPath: saveInline(ctx, c, 'css') }));
+
+  let clickedElementInlineStyle: Record<string, string> | null = null;
+  if (ctx.click?.cssSelector) {
+    clickedElementInlineStyle = await ctx.page.$eval(ctx.click.cssSelector, el => {
+      const out: Record<string, string> = {};
+      const s = (el as HTMLElement).style;
+      for (let i = 0; i < s.length; i++) out[s[i]] = s.getPropertyValue(s[i]);
+      return out;
+    }).catch(() => null);
   }
 
-  return cssInfo;
+  debug(`External CSS: ${stylesheets.length}, inline: ${inlineStyles.length}`);
+
+  return {
+    loadedStylesheets: stylesheets.map(s => s.href),
+    inlineStylesCount: inlineStyles.length,
+    stylesheets,
+    inlineStyles,
+    styleSheetSummary: dom.sheets,
+    customProperties: dom.customProperties,
+    clickedElementInlineStyle
+  };
 }

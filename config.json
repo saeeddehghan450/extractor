@@ -1,7 +1,13 @@
 {
   "targetUrl": "https://www.i2ocr.com/pdf-ocr-persian",
   "headless": false,
-  "slowMo": 80,
+  "slowMo": 0,
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "performanceTraceMs": 3000,
+  "port": 4000,
   "collectors": {
     "network": {
       "enabled": true,
